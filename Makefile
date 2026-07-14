@@ -7,7 +7,6 @@ USER_CARGO := $(HOME)/.cargo/bin/cargo
 USER_WHITAKER := $(HOME)/.local/bin/whitaker
 USER_BIN_PATH := $(HOME)/.cargo/bin:$(HOME)/.local/bin:$(HOME)/.bun/bin
 TOOLS = $(MDFORMAT_ALL) $(MDLINT)
-VENV_TOOLS = pytest
 UV_ENV = PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 UV_CACHE_DIR=.uv-cache UV_TOOL_DIR=.uv-tools
 TYPOS_VERSION ?= 1.48.0
 TYPOS = env $(UV_ENV) $(UV) tool run typos@$(TYPOS_VERSION)
@@ -24,7 +23,8 @@ PYLINT = $(UV_ENV) $(UV) tool run --python $(PYLINT_PYTHON) --from '$(PYLINT_PYP
 
 
 .PHONY: help all audit clean build build-release lint lint-python fmt check-fmt \
-        markdownlint nixie spelling test typecheck $(TOOLS) $(VENV_TOOLS)
+        markdownlint nixie spelling test typecheck pytest $(TOOLS)
+.PHONY: test
 
 .DEFAULT_GOAL := all
 
@@ -76,11 +76,8 @@ $(TOOLS): ## Verify required CLI tools
 endif
 
 
-ifneq ($(strip $(VENV_TOOLS)),)
-.PHONY: $(VENV_TOOLS)
-$(VENV_TOOLS): build ## Verify required CLI tools in venv
+pytest: build ## Verify pytest in the virtual environment
 	$(call ensure_tool_venv,$@)
-endif
 
 
 fmt: build $(MDFORMAT_ALL) ## Format sources
@@ -115,14 +112,14 @@ markdownlint: $(MDLINT) ## Lint Markdown files and spelling
 	+$(MAKE) spelling
 
 spelling: ## Enforce en-GB-oxendict spelling
-	$(UV) run scripts/generate_typos_config.py
+	$(UV) run typos-config-builder --repository . --check
 	$(MD_FILES_FIND) | xargs -0 $(TYPOS) --config typos.toml --force-exclude
 
 nixie: ## Validate Mermaid diagrams
 	$(call ensure_tool,$(NIXIE))
 	$(NIXIE) --no-sandbox
 
-test: build $(VENV_TOOLS) ## Run tests
+test: build pytest ## Run tests
 	$(UV_ENV) $(ACT_TEST_ENV) $(UV) run pytest -v -n $(PYTEST_XDIST_WORKERS)
 
 

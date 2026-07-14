@@ -25,7 +25,7 @@ as a default.
 
 ## Language and runtime
 
-- Target Python 3.13 for all new scripts. Older versions may only be used when
+- Target Python 3.14 for all new scripts. Older versions may only be used when
   integration constraints require them, and any exception must be documented
   inline.
 - Each script starts with an `uv` script block so runtime and dependency
@@ -437,7 +437,7 @@ except FileNotFoundError:
 ```python
 #!/usr/bin/env -S uv run python
 # /// script
-# requires-python = ">=3.13"
+# requires-python = ">=3.14"
 # dependencies = ["cyclopts>=2.9", "cuprum", "cmd-mox"]
 # ///
 

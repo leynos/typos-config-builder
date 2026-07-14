@@ -1,11 +1,14 @@
 [project]
 name = "typos-config-builder"
 version = "0.1.0"
-description = "typos-config-builder package"
+description = "Build deterministic en-GB-oxendict configuration for typos"
 readme = "README.md"
 requires-python = ">=3.14"
 license = { text = "ISC" }
-dependencies = []
+dependencies = ["cyclopts>=4.3,<5"]
+
+[project.scripts]
+typos-config-builder = "typos_config_builder.cli:main"
 
 [dependency-groups]
 dev = [
@@ -309,4 +312,3 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["typos_config_builder"]
-

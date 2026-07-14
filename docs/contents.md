@@ -5,13 +5,22 @@ documentation set.
 
 ## Project guides
 
-- [User guide](users-guide.md) explains how to use the generated project and
-  its public build and test commands.
-- [Developer guide](developers-guide.md) explains the contributor workflow and
-  points maintainers to script automation standards.
+- [User guide](users-guide.md) explains exact-version invocation, consumer
+  files, cache refresh, generation, and drift checking.
+- [Developer guide](developers-guide.md) explains the implementation contract,
+  quality baseline, and change discipline.
+- [Repository layout](repository-layout.md) maps the package, tests,
+  documentation, and consumer-owned files.
 - [Documentation style guide](documentation-style-guide.md) defines the
   spelling, structure, Markdown, Architecture Decision Record (ADR), Request
   for Comments (RFC), and roadmap conventions used by this documentation set.
+
+## Design and decisions
+
+- [typos-config-builder design](typos-config-builder-design.md) defines the
+  deterministic generation pipeline and its deliberate boundaries.
+- [ADR 0001: Keep the builder focused](adrs/0001-keep-the-builder-focused.md)
+  records why rollout, harvesting, and tool orchestration remain out of scope.
 
 ## Engineering practice
 
