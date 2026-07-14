@@ -49,6 +49,7 @@ jobs:
           format: cobertura
           artefact-name-suffix: typos-config-builder
           with-ratchet: 'true'
+          baseline-python-file: .coverage-baseline.typos-config-builder.python
           
 
       - name: Upload coverage data to CodeScene
