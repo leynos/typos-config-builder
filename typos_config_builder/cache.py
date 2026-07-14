@@ -124,7 +124,7 @@ def read_metadata(path: pathlib.Path) -> dict[str, object]:
     """Read best-effort freshness metadata from an untracked sidecar."""
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError, json.JSONDecodeError:
+    except FileNotFoundError, UnicodeDecodeError, json.JSONDecodeError:
         return {}
     return value if isinstance(value, dict) else {}
 

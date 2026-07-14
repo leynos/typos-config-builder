@@ -119,7 +119,7 @@ nixie: ## Validate Mermaid diagrams
 	$(call ensure_tool,$(NIXIE))
 	$(NIXIE) --no-sandbox
 
-test: build $(VENV_TOOLS) ## Run tests
+test: build pytest ## Run tests
 	$(UV_ENV) $(ACT_TEST_ENV) $(UV) run pytest -v -n $(PYTEST_XDIST_WORKERS)
 
 

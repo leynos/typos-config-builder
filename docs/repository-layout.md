@@ -2,10 +2,10 @@
 
 This reference identifies the small set of paths that define the builder.
 
-- `typos_config_builder/` contains the Python 3.14 library and Cyclopts CLI.
-- `tests/` contains focused unit and command-boundary tests.
-- `docs/` contains the user contract, design, decision record, and maintainer
-  guidance.
+- The Python 3.14 library and Cyclopts CLI live in `typos_config_builder/`.
+- Focused unit and command-boundary tests are kept in `tests/`.
+- Maintainer guidance, the user contract, design, and decision record belong in
+  `docs/`.
 - `pyproject.toml` declares the package, Python requirement, dependencies, and
   console entry point.
 - `uv.lock` records the resolved development and build environment.

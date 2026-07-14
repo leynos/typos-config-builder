@@ -80,6 +80,9 @@ fails because no shared policy can be established.
 
 The builder only generates and checks configuration. The consumer remains
 responsible for invoking its pinned Typos binary after the configuration check.
+Typos tokenizes hyphenated phrases as separate words, so entries under
+`[phrases.corrections]` remain shared policy metadata for the consumer's phrase
+gate rather than being rendered as ineffective `extend-words` entries.
 
 ## Deliberate limits
 

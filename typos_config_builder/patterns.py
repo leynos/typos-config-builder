@@ -7,7 +7,16 @@ import pathlib
 import re
 
 GENERIC_PROSE = ("ordinary prose", "unrelated_identifier")
-UNIVERSAL_FILE_GLOBS = frozenset({"*", "**", "**/*", "*.md", "**.md", "**/*.md"})
+UNIVERSAL_FILE_GLOBS = frozenset({
+    "*",
+    "**",
+    "**/*",
+    "**/**",
+    "**/*.*",
+    "*.md",
+    "**.md",
+    "**/*.md",
+})
 BACKREFERENCE = re.compile(r"\\(?:[1-9]|g<|k<)|\(\?P=")
 REPETITION = re.compile(r"\{(?:\d+(?:,\d*)?|,\d+)\}")
 

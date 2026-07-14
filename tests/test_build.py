@@ -8,8 +8,10 @@ import pytest
 from conftest import AuthorityFactory, authority_text
 
 from typos_config_builder import ConfigDriftError, build
-from typos_config_builder.cache import atomic_write
+from typos_config_builder.cache import atomic_write, read_metadata
+from typos_config_builder.patterns import validate_local_exceptions
 
+# Split intentional misspellings so the test source passes its own spelling gate.
 PLAIN_BRITISH_ORGANIZE = "organi" + "se"
 HYPHENATED_HANDWRITTEN = "hand" + "-written"
 CACHE_NAME = ".typos-oxendict-base.toml"
@@ -88,11 +90,11 @@ def test_atomic_write_preserves_output_when_replacement_fails(
     assert not temporary_paths[0].exists()
 
 
-def test_local_authority_refreshes_only_when_newer(
+def test_local_authority_repairs_cache_and_refreshes_only_when_newer(
     authority_factory: AuthorityFactory,
     repository: Path,
 ) -> None:
-    """A newer cache survives an older local authority until the source advances."""
+    """A changed cache is repaired before a newer local authority is refreshed."""
     authority = authority_factory(stem="organ")
     os.utime(authority, ns=(1_000_000_000, 1_000_000_000))
     build(repository, source=authority)
@@ -101,7 +103,7 @@ def test_local_authority_refreshes_only_when_newer(
     cache.write_text(authority_text(stem="local"), encoding="utf-8")
     os.utime(cache, ns=(2_000_000_000, 2_000_000_000))
     build(repository, source=authority)
-    assert generated_words(repository)["localize"] == "localize"
+    assert PLAIN_BRITISH_ORGANIZE in generated_words(repository)
 
     authority.write_text(authority_text(stem="newer"), encoding="utf-8")
     os.utime(authority, ns=(3_000_000_000, 3_000_000_000))
@@ -119,9 +121,10 @@ def test_offline_build_requires_and_reuses_valid_cache(
     with pytest.raises(FileNotFoundError, match="cached shared dictionary"):
         build(repository, source=remote, offline=True)
 
-    build(repository, source=authority_factory())
+    authority = authority_factory()
+    build(repository, source=authority)
     (repository / OUTPUT_NAME).unlink()
-    build(repository, source=remote, offline=True)
+    build(repository, source=authority, offline=True)
 
     assert (repository / OUTPUT_NAME).is_file()
 
@@ -165,8 +168,40 @@ def test_check_rejects_missing_and_drifted_output(
     assert drifted.value.output == repository / OUTPUT_NAME
 
 
+def test_undecodable_output_is_drift_and_is_regenerated(
+    authority_factory: AuthorityFactory,
+    repository: Path,
+) -> None:
+    """Invalid UTF-8 output is stale rather than an unhandled decode failure."""
+    authority = authority_factory()
+    build(repository, source=authority)
+    output = repository / OUTPUT_NAME
+    output.write_bytes(b"\xff")
+
+    with pytest.raises(ConfigDriftError):
+        build(repository, source=authority, check=True)
+
+    build(repository, source=authority)
+    assert output.read_text(encoding="utf-8").startswith("# Generated")
+
+
+def test_undecodable_metadata_is_absent(repository: Path) -> None:
+    """Invalid UTF-8 metadata is ignored like missing or malformed metadata."""
+    metadata = repository / METADATA_NAME
+    metadata.write_bytes(b"\xff")
+
+    assert read_metadata(metadata) == {}
+
+
+@pytest.mark.parametrize("pattern", ["**/**", "**/*.*"])
+def test_broad_file_glob_equivalents_are_rejected(pattern: str) -> None:
+    """Equivalent all-file globs cannot disable repository spelling checks."""
+    with pytest.raises(ValueError, match="local file exclusion is too broad"):
+        validate_local_exceptions((), (pattern,))
+
+
 def test_bundled_authority_contains_handwritten_policy(repository: Path) -> None:
-    """The installed authority accepts the closed compound and corrects the hyphen."""
+    """The authority accepts the compound and records hyphen correction metadata."""
     build(repository)
 
     words = generated_words(repository)

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import collections.abc as cabc
 import dataclasses as dc
+import http.client
 import logging
 import pathlib
 import typing as typ
@@ -17,12 +18,10 @@ import urllib.request
 
 from typos_config_builder import cache as cache_support
 
-if typ.TYPE_CHECKING:
-    import http.client
-
 ContentValidator = cabc.Callable[[bytes], None]
 AtomicWriter = cabc.Callable[[pathlib.Path, bytes], None]
 HTTP_NOT_MODIFIED = 304
+TRANSIENT_HTTP_STATUSES = frozenset({500, 502, 503, 504})
 LOGGER = logging.getLogger(__name__)
 
 
@@ -116,10 +115,10 @@ def _local_cache_is_current(
     """Report whether source-scoped metadata proves a local cache current."""
     saved_mtime = saved.get("mtime_ns")
     return (
-        cache_support.valid_cache(cache, validate)
-        and saved.get("source") == source.name
+        saved.get("source") == source.name
         and isinstance(saved_mtime, int)
         and source.mtime_ns <= saved_mtime
+        and _cache_matches_saved_digest(cache, saved, validate)
     )
 
 
@@ -169,6 +168,32 @@ def _conditional_headers(saved: cabc.Mapping[str, object]) -> dict[str, str]:
     return headers
 
 
+def _cache_matches_saved_digest(
+    cache: pathlib.Path,
+    saved: cabc.Mapping[str, object],
+    validate: ContentValidator,
+) -> bool:
+    """Report whether valid cache bytes match their saved digest."""
+    try:
+        content = cache.read_bytes()
+        validate(content)
+    except OSError, UnicodeDecodeError, TypeError, ValueError:
+        return False
+    return saved.get("sha256") == cache_support.digest(content)
+
+
+def _cache_matches_saved_identity(
+    state: _RemoteRequestState,
+    validate: ContentValidator,
+) -> bool:
+    """Report whether cache bytes match their saved source and digest."""
+    return state.saved.get("source") == state.source and _cache_matches_saved_digest(
+        state.cache,
+        state.saved,
+        validate,
+    )
+
+
 def _https_request(
     source: str, headers: cabc.Mapping[str, str]
 ) -> urllib.request.Request:
@@ -190,7 +215,7 @@ def _write_remote_cache(
     """Validate and atomically persist a changed remote authority."""
     try:
         content = response.read()
-    except urllib.error.URLError as error:
+    except (http.client.HTTPException, OSError) as error:
         message = f"shared dictionary authority is unavailable: {state.source}"
         raise cache_support.NetworkUnavailableError(message) from error
     context.validate(content)
@@ -215,8 +240,8 @@ def _remote_response_result(
     context: _RefreshContext,
 ) -> cache_support.RefreshResult:
     """Return the cache result for a successful HTTP response."""
-    if cache_support.valid_cache(
-        state.cache, context.validate
+    if _cache_matches_saved_identity(
+        state, context.validate
     ) and cache_support.remote_is_not_newer(state.saved, response.headers):
         _log_decision("current", "https")
         return cache_support.RefreshResult("current", state.cache)
@@ -224,21 +249,19 @@ def _remote_response_result(
 
 
 def _stale_cache_or_raise(
-    cache: pathlib.Path,
+    state: _RemoteRequestState,
     error: cache_support.NetworkUnavailableError,
     context: _RefreshContext,
-    *,
-    has_matching_source: bool,
 ) -> cache_support.RefreshResult:
     """Return a source-scoped stale cache or propagate connectivity loss."""
-    if has_matching_source and cache_support.valid_cache(cache, context.validate):
+    if _cache_matches_saved_identity(state, context.validate):
         _log_decision(
             "stale-cache",
             "https",
             error_class="network-unavailable",
             level=logging.INFO,
         )
-        return cache_support.RefreshResult("stale-cache", cache)
+        return cache_support.RefreshResult("stale-cache", state.cache)
     _log_decision(
         "stale-cache-rejected",
         "https",
@@ -249,36 +272,26 @@ def _stale_cache_or_raise(
 
 
 def _is_current_not_modified_response(
-    cache: pathlib.Path,
+    state: _RemoteRequestState,
     error: urllib.error.HTTPError,
     context: _RefreshContext,
-    *,
-    has_matching_source: bool,
 ) -> bool:
     """Return whether HTTP 304 confirms the matching cache is current."""
-    return (
-        error.code == HTTP_NOT_MODIFIED
-        and has_matching_source
-        and cache_support.valid_cache(cache, context.validate)
+    return error.code == HTTP_NOT_MODIFIED and _cache_matches_saved_identity(
+        state,
+        context.validate,
     )
 
 
 def _http_error_result(
-    cache: pathlib.Path,
+    state: _RemoteRequestState,
     error: urllib.error.HTTPError,
     context: _RefreshContext,
-    *,
-    has_matching_source: bool,
 ) -> cache_support.RefreshResult:
-    """Translate HTTP 304 into a source-scoped current-cache result."""
-    if _is_current_not_modified_response(
-        cache,
-        error,
-        context,
-        has_matching_source=has_matching_source,
-    ):
+    """Translate cache-safe HTTP statuses into refresh results."""
+    if _is_current_not_modified_response(state, error, context):
         _log_decision("not-modified", "https", error_class="http-not-modified")
-        return cache_support.RefreshResult("current", cache)
+        return cache_support.RefreshResult("current", state.cache)
     if error.code == HTTP_NOT_MODIFIED:
         _log_decision(
             "not-modified-rejected",
@@ -286,6 +299,10 @@ def _http_error_result(
             error_class="http-not-modified",
             level=logging.WARNING,
         )
+    if error.code in TRANSIENT_HTTP_STATUSES:
+        message = "shared dictionary authority returned a transient HTTP status"
+        unavailable = cache_support.NetworkUnavailableError(message)
+        return _stale_cache_or_raise(state, unavailable, context)
     raise error
 
 
@@ -296,46 +313,31 @@ def _refresh_https(
 ) -> cache_support.RefreshResult:
     """Conditionally refresh from HTTPS with source-scoped stale fallback."""
     saved = cache_support.read_metadata(context.options.metadata)
-    has_matching_source = saved.get("source") == source
-    if not has_matching_source:
-        saved = {}
-        _log_decision("source-mismatch", "https")
-    request = _https_request(source, _conditional_headers(saved))
+    state = _RemoteRequestState(source, cache, context.options.metadata, saved)
+    if not _cache_matches_saved_identity(state, context.validate):
+        state = _RemoteRequestState(source, cache, context.options.metadata, {})
+        _log_decision("cache-identity-mismatch", "https")
+    request = _https_request(source, _conditional_headers(state.saved))
     open_remote = (
         _HTTPS_OPENER.open if context.options.opener is None else context.options.opener
     )
     try:
         response_context = open_remote(request, timeout=30.0)
     except urllib.error.HTTPError as error:
-        return _http_error_result(
-            cache,
-            error,
-            context,
-            has_matching_source=has_matching_source,
-        )
-    except urllib.error.URLError:
+        return _http_error_result(state, error, context)
+    except http.client.HTTPException, OSError:
         message = f"shared dictionary authority is unavailable: {source}"
         unavailable = cache_support.NetworkUnavailableError(message)
-        return _stale_cache_or_raise(
-            cache,
-            unavailable,
-            context,
-            has_matching_source=has_matching_source,
-        )
+        return _stale_cache_or_raise(state, unavailable, context)
     with response_context as response:
         try:
             return _remote_response_result(
-                _RemoteRequestState(source, cache, context.options.metadata, saved),
+                state,
                 response,
                 context,
             )
         except cache_support.NetworkUnavailableError as error:
-            return _stale_cache_or_raise(
-                cache,
-                error,
-                context,
-                has_matching_source=has_matching_source,
-            )
+            return _stale_cache_or_raise(state, error, context)
 
 
 def refresh(
@@ -346,13 +348,24 @@ def refresh(
 ) -> cache_support.RefreshResult:
     """Refresh an untracked cache when its selected authority is newer."""
     context = _RefreshContext(options, validate, cache_support.atomic_write)
+    source_text = str(source)
     if options.offline:
-        if not cache_support.valid_cache(cache, validate):
+        source_name = (
+            str(pathlib.Path(source_text).resolve())
+            if isinstance(source, pathlib.Path) or "://" not in source_text
+            else source_text
+        )
+        state = _RemoteRequestState(
+            source_name,
+            cache,
+            options.metadata,
+            cache_support.read_metadata(options.metadata),
+        )
+        if not _cache_matches_saved_identity(state, validate):
             message = f"no cached shared dictionary at {cache}"
             raise FileNotFoundError(message)
         _log_decision("offline-cache", "cache")
         return cache_support.RefreshResult("offline-cache", cache)
-    source_text = str(source)
     if isinstance(source, pathlib.Path) or "://" not in source_text:
         return _refresh_local(pathlib.Path(source_text), cache, context)
     return _refresh_https(source_text, cache, context)

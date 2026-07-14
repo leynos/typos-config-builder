@@ -44,7 +44,7 @@ def run(
     Raises
     ------
     SystemExit
-        If check mode detects missing or stale generated configuration.
+        If configuration drifts or an expected build failure occurs.
 
     Examples
     --------
@@ -55,6 +55,9 @@ def run(
         result = build(repository, source, offline=offline, check=check)
     except ConfigDriftError as error:
         print(f"drift: {error.output}", file=sys.stderr)
+        raise SystemExit(1) from error
+    except (OSError, ValueError) as error:
+        print(f"error: {error}", file=sys.stderr)
         raise SystemExit(1) from error
     print(f"{result.refresh_status}: {result.output}")
 

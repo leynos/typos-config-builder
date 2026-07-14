@@ -51,6 +51,10 @@ owns its local overlay and pins both this package and its Typos binary. The
 `--source` option permits an explicit alternative authority without turning
 source discovery into a builder responsibility.
 
+Phrase corrections remain in the cached policy for consumer-side enforcement.
+Typos splits punctuation-separated phrases into individual words, so its
+configuration cannot express those corrections faithfully.
+
 ## 4. Compatibility and evolution
 
 Before registry publication, consumers pin a complete Git commit. Afterwards,

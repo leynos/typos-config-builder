@@ -81,6 +81,8 @@ def render(dictionary: Dictionary) -> str:
     >>> "locale = \"en-gb\"" in render(Dictionary())
     True
     """
+    # Typos splits punctuated phrases into words, so phrase corrections remain
+    # policy metadata for consumer-side enforcement rather than rendered config.
     lines = [
         "# Generated from the shared en-GB-oxendict dictionary.",
         "# Regenerate with typos-config-builder; do not edit by hand.",

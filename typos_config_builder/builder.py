@@ -71,6 +71,14 @@ def _dictionary(repository: pathlib.Path) -> policy.Dictionary:
     return dictionary
 
 
+def _output_is_current(output: pathlib.Path, rendered: str) -> bool:
+    """Return whether existing generated output is valid UTF-8 and current."""
+    try:
+        return output.read_text(encoding="utf-8") == rendered
+    except FileNotFoundError, UnicodeDecodeError:
+        return False
+
+
 def build(
     repository: pathlib.Path,
     source: str | pathlib.Path | None = None,
@@ -123,7 +131,7 @@ def build(
     )
     output = repository / OUTPUT_NAME
     rendered = render.render(_dictionary(repository))
-    is_current = output.exists() and output.read_text(encoding="utf-8") == rendered
+    is_current = _output_is_current(output, rendered)
     if check and not is_current:
         raise ConfigDriftError(output)
     if not is_current:
