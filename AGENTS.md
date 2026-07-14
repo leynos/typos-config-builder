@@ -133,8 +133,7 @@
   - Record the decision in architecture, design, or developers-guide docs using
     `docs/contents.md` as the index.
 - **Post-commit review:** after functional changes or bug fixes that meet
-  quality
-  gates, review changed code and adjacent areas using these heuristics.
+  quality gates, review changed code and adjacent areas using these heuristics.
 - **Separate atomic refactors:** if refactoring is required, implement it in a
   separate atomic commit after the functional change and ensure it passes all
   relevant gates.
@@ -161,11 +160,9 @@
   integration contracts, persistence, command-line behaviour, network
   boundaries, user interface flows, or other system-level behaviour.
 - Use property tests with `hypothesis` or `CrossHair` when a change introduces
-  an
-  invariant over a range of inputs, states, orderings, or transitions.
+  an invariant over a range of inputs, states, orderings, or transitions.
 - Run relevant unit, behavioural, property, and end-to-end suites before and
-  after
-  each change.
+  after each change.
 
 ## Markdown guidance
 
@@ -174,8 +171,8 @@
 - The spelling configuration `typos.toml` is generated. Generic Oxford stems
   belong in the shared base in `leynos/agent-helper-scripts`; project-specific
   accepted words, patterns, and exclusions belong in `typos.local.toml`.
-  Regenerate with `uv run scripts/generate_typos_config.py` rather than editing
-  `typos.toml` by hand.
+  Regenerate with `uv run typos-config-builder --repository .` rather than
+  editing `typos.toml` by hand.
 - Run `make fmt` after documentation changes to format Markdown and fix table
   markup.
 - Validate Mermaid diagrams in Markdown by running `make nixie`.
@@ -201,7 +198,7 @@ internally facing conventions or practices in `docs/developers-guide.md`.
 For Python development, refer to the detailed guidelines in the `.rules/`
 directory:
 
-- [Python code style guidelines](.rules/python-00.md) - Core Python 3.13 style
+- [Python code style guidelines](.rules/python-00.md) - Core Python 3.14 style
   conventions.
 - [Python context managers](.rules/python-context-managers.md) - Best practices
   for context managers.

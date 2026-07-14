@@ -1,80 +1,94 @@
-# typos-config-builder Users' Guide
+# typos-config-builder users' guide
 
-## Quality Gates
+This guide is for repositories that generate a tracked `typos.toml` from the
+shared en-GB-oxendict dictionary and a narrow local overlay.
 
-Generated projects use `make all` as the standard local quality gate. It runs
-these targets in order:
+## Pin the invocation
 
-- `build`: create the local virtual environment and install development
-  dependencies with `uv sync --group dev`.
-- `check-fmt`: check Ruff formatting for Python sources and, when Rust is
-  enabled, `cargo fmt` for the Rust extension.
-- `lint`: run `lint-python` and, when Rust is enabled, `lint-rust`.
-- `typecheck`: run `ty check`.
-- `test`: run pytest and, when Rust is enabled, Rust tests.
-- `spelling`: generate shared en-GB-oxendict policy and check Markdown with the
-  pinned `typos` version.
-- `audit`: run `pip-audit` and, when Rust is enabled, `cargo audit`.
-
-The `lint-python` target runs Ruff, then Interrogate with
-`interrogate --fail-under 100 $(PYTHON_TARGETS)` to enforce 100% docstring
-coverage for the Python targets, then Pylint via a PyPy-backed runner. The
-Pylint runner is installed through `uv tool run` from the pinned
-`pylint-pypy-shim` repository.
-
-The spelling target keeps an ignored shared-base cache and a tracked generated
-`typos.toml`. Run `make spelling` directly when updating documentation; a
-populated cache remains usable when the shared source is temporarily offline.
-
-Pytest discovery is limited to the top-level `tests/` tree. Keep generated
-project unit tests there rather than in package module directories or
-`unittests/` subdirectories, because CI coverage runs through xdist-backed
-SlipCover support.
-
-When the Rust extension is enabled, `lint-rust` runs:
-
-- `cargo doc` with warnings denied;
-- `cargo clippy` with the generated Clippy configuration; and
-- Whitaker with `whitaker --all`.
-
-The generated Makefile installs Whitaker on demand before local Rust linting
-when it is not already available.
-
-## Dependency Auditing
-
-Run `make audit` to check generated project dependencies for known
-vulnerabilities. All generated projects run `pip-audit` against the Python
-environment created by `uv sync --group dev`. Rust-enabled projects also run
-`cargo audit` from the `rust_extension` crate directory.
-
-## Rust Test Behaviour
-
-Rust-enabled projects use `cargo nextest run` when `cargo-nextest` is
-available. If `cargo-nextest` is not installed, the generated `test` target
-falls back to `cargo test`. Rust documentation tests still run through
-`cargo test --doc`.
-
-If cargo is missing from the local environment, generated Rust test targets
-fail early with a clear error instead of falling through to an unusable `cargo`
-invocation.
-
-## Local GitHub Actions Validation
-
-The generated Makefile supports optional local workflow validation using
-[`act`](https://github.com/nektos/act). When `act` is installed and Docker is
-available, pass `WITH_ACT=1` to the `test` target:
+Until a package registry release exists, pin the complete Git commit identifier
+at the consumer boundary:
 
 ```bash
-make test WITH_ACT=1
+uvx --from "git+https://github.com/leynos/typos-config-builder.git@FULL_COMMIT_SHA" \
+  typos-config-builder --check
 ```
 
-This sets `RUN_ACT_VALIDATION=1` for the pytest invocation, enabling the
-act-based integration tests that run the generated CI workflow locally. Omitting
-`WITH_ACT` (or setting it to `0`) skips act validation; the rest of the test
-suite runs unchanged.
+Replace `FULL_COMMIT_SHA` with the selected commit. The exact revision makes
+policy changes reviewable. Consumers should not invoke an unpinned branch or
+latest revision.
 
-## Cleaning Local State
+After registry publication, the equivalent form pins the released package
+version:
 
-Run `make clean` to remove local build and cache outputs, including `.venv`,
-`.uv-cache`, `.uv-tools`, Python cache directories, coverage outputs, and Rust
-`target` output when the Rust extension is enabled.
+```bash
+uvx --from typos-config-builder==X.Y.Z typos-config-builder --check
+```
+
+## Repository files
+
+The builder operates on four files in the consumer repository:
+
+- `.typos-oxendict-base.toml` is the untracked local cache of the shared
+  dictionary.
+- `.typos-oxendict-base.json` is untracked refresh metadata.
+- `typos.local.toml` is the tracked repository-specific overlay.
+- `typos.toml` is the tracked, deterministic generated output.
+
+The shared dictionary remains authoritative for estate-wide Oxford spellings.
+The local overlay is only for repository-specific accepted terms, corrections,
+patterns, and file exclusions. It must not weaken or contradict the shared
+policy.
+
+## Generate configuration
+
+Run the command without `--check` to refresh the cache, merge the local
+overlay, and atomically write `typos.toml`:
+
+```bash
+uvx --from "git+https://github.com/leynos/typos-config-builder.git@FULL_COMMIT_SHA" \
+  typos-config-builder
+```
+
+The command uses the current directory as the consumer repository. Pass
+`--repository PATH` to select another repository. The bundled shared dictionary
+is the default authority; `--source SOURCE` selects an explicit alternative.
+
+Use `--offline` to prohibit refresh from the configured authority and require a
+valid existing cache.
+
+## Check for drift
+
+Pass `--check` in a quality gate. The command refreshes the cache, merges the
+local overlay, and compares the deterministic rendering with tracked
+`typos.toml`. It exits non-zero on drift without rewriting the tracked file.
+
+## Builder workflow
+
+The CLI performs a small, ordered workflow:
+
+1. Refresh the cached shared dictionary only when the configured authority is
+   newer than the valid local cache.
+2. Load the cached dictionary and merge `typos.local.toml` when the overlay is
+   present.
+3. Render `typos.toml` deterministically.
+4. Atomically write the rendered content, or compare it with the tracked file
+   when `--check` is set.
+
+The refresh operation preserves a valid cache when an explicitly configured
+authority is temporarily unavailable. A first offline run without a valid cache
+fails because no shared policy can be established.
+
+The builder only generates and checks configuration. The consumer remains
+responsible for invoking its pinned Typos binary after the configuration check.
+
+## Deliberate limits
+
+The package does not:
+
+- discover or crawl the code estate;
+- harvest words or infer spelling policy from repository contents;
+- execute Typos or interpret its findings;
+- install or orchestrate Nixie or Merman CLI;
+- provide a general-purpose policy or configuration framework.
+
+These limits keep the package focused on reproducible `typos.toml` generation.

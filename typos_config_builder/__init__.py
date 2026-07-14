@@ -1,19 +1,10 @@
-"""typos-config-builder package."""
+"""Build deterministic en-GB-oxendict configuration for ``typos``."""
 
-from __future__ import annotations
+from typos_config_builder.builder import (
+    BuildResult,
+    ConfigBuilderError,
+    ConfigDriftError,
+    build,
+)
 
-import importlib
-import typing as typ
-
-if typ.TYPE_CHECKING:
-    import collections.abc as cabc
-
-PACKAGE_NAME = "typos_config_builder"
-
-try:  # pragma: no cover - Rust optional
-    rust = importlib.import_module(f"._{PACKAGE_NAME}_rs", package=__name__)
-    hello = typ.cast("cabc.Callable[[], str]", rust.hello)
-except ModuleNotFoundError:  # pragma: no cover - Python fallback
-    from .pure import hello
-
-__all__ = ["hello"]
+__all__ = ["BuildResult", "ConfigBuilderError", "ConfigDriftError", "build"]
