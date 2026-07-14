@@ -338,15 +338,15 @@ The exceptions raised are those from the Python event loop itself, such as
 
 A `Catalogue` instance is safe to share across concurrent tasks because it is
 read-only after construction. `sh.scoped(CATALOGUE)` is a context manager that
-binds the catalogue for the current execution scope. Authors must not mutate the
-catalogue inside a concurrent task. Construct the catalogue once at module level
-and re-use it.
+binds the catalogue for the current execution scope. Authors must not mutate
+the catalogue inside a concurrent task. Construct the catalogue once at module
+level and re-use it.
 
 #### Concurrent testing patterns with cmd-mox
 
-Concurrent async script paths use the same catalogue and scoped context in tests
-as they do in production code. `cmd-mox` intercepts at the catalogue boundary
-regardless of whether `run()` or `run_sync()` is used.
+Concurrent async script paths use the same catalogue and scoped context in
+tests as they do in production code. `cmd-mox` intercepts at the catalogue
+boundary regardless of whether `run()` or `run_sync()` is used.
 
 ```python
 import pytest

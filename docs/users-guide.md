@@ -18,8 +18,8 @@ these targets in order:
 
 The `lint-python` target runs Ruff, then Interrogate with
 `interrogate --fail-under 100 $(PYTHON_TARGETS)` to enforce 100% docstring
-coverage for the Python targets, then Pylint via a PyPy-backed runner. The Pylint
-runner is installed through `uv tool run` from the pinned
+coverage for the Python targets, then Pylint via a PyPy-backed runner. The
+Pylint runner is installed through `uv tool run` from the pinned
 `pylint-pypy-shim` repository.
 
 The spelling target keeps an ignored shared-base cache and a tracked generated
@@ -49,12 +49,13 @@ environment created by `uv sync --group dev`. Rust-enabled projects also run
 
 ## Rust Test Behaviour
 
-Rust-enabled projects use `cargo nextest run` when `cargo-nextest` is available.
-If `cargo-nextest` is not installed, the generated `test` target falls back to
-`cargo test`. Rust documentation tests still run through `cargo test --doc`.
+Rust-enabled projects use `cargo nextest run` when `cargo-nextest` is
+available. If `cargo-nextest` is not installed, the generated `test` target
+falls back to `cargo test`. Rust documentation tests still run through
+`cargo test --doc`.
 
-If cargo is missing from the local environment, generated Rust test targets fail
-early with a clear error instead of falling through to an unusable `cargo`
+If cargo is missing from the local environment, generated Rust test targets
+fail early with a clear error instead of falling through to an unusable `cargo`
 invocation.
 
 ## Local GitHub Actions Validation
@@ -68,9 +69,9 @@ make test WITH_ACT=1
 ```
 
 This sets `RUN_ACT_VALIDATION=1` for the pytest invocation, enabling the
-act-based integration tests that run the generated CI workflow locally.
-Omitting `WITH_ACT` (or setting it to `0`) skips act validation; the rest of
-the test suite runs unchanged.
+act-based integration tests that run the generated CI workflow locally. Omitting
+`WITH_ACT` (or setting it to `0`) skips act validation; the rest of the test
+suite runs unchanged.
 
 ## Cleaning Local State
 
