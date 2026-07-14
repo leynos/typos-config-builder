@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    env:
+      CS_ACCESS_TOKEN: ${{ secrets.CS_ACCESS_TOKEN }}
+      CODESCENE_CLI_SHA256: ${{ vars.CODESCENE_CLI_SHA256 }}
+      
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+        with:
+          persist-credentials: false
+          # Full history so a future `cs-coverage check` can reach the
+          # pull request's merge base (see the deferred gate note below).
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+
+      
+      - name: Install CLI tools
+        run: |
+          for tool in mbake; do uv tool install ${tool}; done
+          npm install -g markdownlint-cli2
+
+      - name: Validate Makefile
+        run: mbake validate Makefile
+
+      - name: Install code
+        run: make build
+
+      - name: Check formatting
+        run: make check-fmt
+
+      - name: Run ruff
+        run: make lint
+
+      - name: Run typechecker
+        run: make typecheck
+
+      - name: Check spelling
+        run: make spelling
+
+      - name: Audit dependencies
+        run: make audit
+
+      # Coverage runs on pull requests only. Pushes to main upload their
+      # own coverage (and advance the ratchet baseline) via
+      # coverage-main.yml, so generating it here as well would duplicate
+      # the work and the CodeScene upload for the same commit.
+      - name: Test and Measure Coverage
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: leynos/shared-actions/.github/actions/generate-coverage@927edd45ae77be4251a8a18ca9eb5613a2e32cbd
+        with:
+          output-path: coverage.xml
+          format: cobertura
+          artefact-name-suffix: typos-config-builder
+          with-ratchet: 'true'
+          
+      # The changed-line `cs-coverage check` gate is deliberately not wired
+      # in yet: CodeScene rejects `cs-coverage check` for any project whose
+      # coverage-gates configuration is absent ("Lacks the gates
+      # configuration."), which is a CodeScene-side, per-project setting
+      # rather than a CI defect. Once this repo is onboarded to CodeScene
+      # — set the `codescene_project_id` copier answer — and coverage-main.yml
+      # has uploaded to main at least once, add a `mode: check` step guarded
+      # on `CS_ACCESS_TOKEN != ''` with the project's
+      # `project-url: https://api.codescene.io/v2/projects/<id>`.

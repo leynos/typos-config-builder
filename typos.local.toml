@@ -1,0 +1,19 @@
+# Repository-specific identifiers, quotations and deliberate fixtures.
+
+schema = 1
+
+[oxford]
+stems = []
+
+[words]
+accepted = []
+
+[words.corrections]
+
+[patterns]
+ignore = [
+  'Center \| Microsoft Learn',
+]
+
+[files]
+exclude = []
