@@ -1,5 +1,8 @@
 # typos-config-builder
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](
+https://deepwiki.com/leynos/typos-config-builder)
+
 `typos-config-builder` provides one versioned Python 3.14 command-line
 interface (CLI) for generating the estate's en-GB-oxendict `typos.toml` files.
 It refreshes the shared Oxford dictionary cache when the authority is newer,
