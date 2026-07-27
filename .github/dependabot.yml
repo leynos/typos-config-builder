@@ -2,16 +2,20 @@ version: 2
 updates:
   # Enable version updates for GitHub Actions
   - package-ecosystem: "github-actions"
-    directory: "/"
+    directories:
+      - "/"
+      - "/.github/actions/*"
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
       - "github-actions"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
 
-  # Enable version updates for Python (pip / requirements*.txt)
-  - package-ecosystem: "pip"
+  # Enable version updates for Python (uv-managed pyproject.toml)
+  - package-ecosystem: "uv"
     directory: "/"
     open-pull-requests-limit: 5
     labels:
@@ -19,3 +23,6 @@ updates:
       - "python"
     schedule:
       interval: "daily"
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
