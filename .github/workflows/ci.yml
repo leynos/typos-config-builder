@@ -77,7 +77,7 @@ jobs:
       # the work and the CodeScene upload for the same commit.
       - name: Test and Measure Coverage
         if: ${{ github.event_name == 'pull_request' }}
-        uses: leynos/shared-actions/.github/actions/generate-coverage@927edd45ae77be4251a8a18ca9eb5613a2e32cbd
+        uses: leynos/shared-actions/.github/actions/generate-coverage@6b9dc1be1b8bfb585ddd0083d50b9d6597cd902e
         with:
           output-path: coverage.xml
           format: cobertura
