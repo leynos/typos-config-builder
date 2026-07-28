@@ -54,7 +54,7 @@ jobs:
 
       - name: Upload coverage data to CodeScene
         if: env.CS_ACCESS_TOKEN != ''
-        uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@d3cbe87e745e07b3ad53ddcb87deb19ffa95c9b8
+        uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@dca61319d4e04d49e4c7d17aac71433081a77e27
         with:
           format: cobertura
           path: coverage.xml
