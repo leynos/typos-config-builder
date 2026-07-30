@@ -14,12 +14,12 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         fetch-depth: 0
         persist-credentials: false
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v7
       with:
         python-version: ${{ inputs.python-version }}
     - name: Install uv
@@ -28,7 +28,7 @@ runs:
       shell: bash
       run: uv build --wheel --out-dir ${{ inputs.out-dir }}
     - name: Upload wheel artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: ${{ inputs.artifact-name }}
         path: ${{ inputs.out-dir }}/*.whl
