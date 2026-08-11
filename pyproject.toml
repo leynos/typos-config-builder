@@ -5,7 +5,7 @@ description = "Build deterministic en-GB-oxendict configuration for typos"
 readme = "README.md"
 requires-python = ">=3.14"
 license = { text = "ISC" }
-dependencies = ["cyclopts>=4.22.4,<5"]
+dependencies = ["cyclopts>=4.22.5,<5"]
 
 [project.scripts]
 typos-config-builder = "typos_config_builder.cli:main"
