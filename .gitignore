@@ -208,3 +208,10 @@ target/
 # Untracked cache of the estate-wide en-GB-oxendict dictionary.
 .typos-oxendict-base.json
 .typos-oxendict-base.toml
+.vtcode/
+.claude/
+.memdb/
+.grepai/
+*.swp
+*.swo
+*~
