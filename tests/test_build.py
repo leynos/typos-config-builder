@@ -14,6 +14,7 @@ from typos_config_builder.patterns import validate_local_exceptions
 # Split intentional misspellings so the test source passes its own spelling gate.
 PLAIN_BRITISH_ORGANIZE = "organi" + "se"
 HYPHENATED_HANDWRITTEN = "hand" + "-written"
+INLINE_CODE_EXCLUSION = r"`[^`\n]+`"
 CACHE_NAME = ".typos-oxendict-base.toml"
 METADATA_NAME = ".typos-oxendict-base.json"
 OUTPUT_NAME = "typos.toml"
@@ -208,3 +209,12 @@ def test_bundled_authority_contains_handwritten_policy(repository: Path) -> None
     cached = tomllib.loads((repository / CACHE_NAME).read_text(encoding="utf-8"))
     assert words["handwritten"] == "handwritten"
     assert cached["phrases"]["corrections"][HYPHENATED_HANDWRITTEN] == "handwritten"
+
+
+def test_bundled_authority_does_not_mask_inline_code(repository: Path) -> None:
+    """Keep inline-code spelling checks active in the shared authority."""
+    build(repository)
+
+    cached = tomllib.loads((repository / CACHE_NAME).read_text(encoding="utf-8"))
+
+    assert INLINE_CODE_EXCLUSION not in cached["patterns"]["ignore"]
