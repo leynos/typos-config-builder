@@ -103,7 +103,10 @@ R1 to R14 are the requirement identifiers used below.
 - [x] (2026-09-14 17:30Z) Sweep report written and decisions recorded.
 - [x] (2026-09-14 18:05Z) Baseline `make all` run on `a343fe4` (see
   `Artefacts and notes`).
-- [ ] EP-M1 live authority default with bundled bootstrap fallback.
+- [x] (2026-09-14 23:40Z) EP-M1 live authority default with bundled
+  bootstrap fallback: `DEFAULT_SOURCE`, `bundled_authority()`,
+  `RefreshOptions.bootstrap`, `cache.bootstrap_cache`, tests, docs, ADR
+  amendment, and this repository's write-mode `spelling` target.
 - [ ] EP-M2 regex-safety relaxation for optional groups.
 - [ ] EP-M3 hardening: 429 transient, response size cap, `[patterns] remove`.
 - [ ] EP-M4 `check-phrases` command.
@@ -119,7 +122,24 @@ R1 to R14 are the requirement identifiers used below.
 
 ## Surprises & discoveries
 
-- Observation: none yet beyond those in the sweep report.
+- Observation: the live authority already differs from the bundled snapshot.
+  Regenerating `typos.toml` from `main` added four correction families and
+  removed the inline-code ignore pattern `` `[^`\n]+` ``, which exists only in
+  the bundled snapshot. This repository's own Markdown then failed on two
+  legitimate inline-code spans quoting external API identifiers (`color` in
+  the documentation style guide, `artifact` in the act guide).
+  Response: the pattern was added to this repository's `typos.local.toml`
+  with a comment pointing at EP-M7, which moves it into the shared base. The
+  overlay entry should be removed once EP-M7 lands, since `policy.merge`
+  unions patterns and would otherwise keep a redundant local copy.
+  Implication for consumers: every consumer whose first run uses the live
+  authority loses that pattern until EP-M7 ships, so EP-M7 should precede the
+  consumer batches EP-M8 to EP-M12.
+- Observation: `http.py` reached 402 lines when the bootstrap fallback was
+  added inline. The snapshot write now lives in `cache.bootstrap_cache` and
+  `http.py` stands at 399 lines, leaving almost no headroom for EP-M3's 429
+  status and size cap. EP-M3 should plan to extract the remote-response path
+  rather than append to `http.py`.
 
 ## Decision log
 
@@ -128,6 +148,12 @@ R1 to R14 are the requirement identifiers used below.
   Rationale: owner decision; bundling turned a one-word change into 28 pin
   bumps that never happened.
   Date/Author: 2026-09-14, repository owner.
+- Decision: the bundled snapshot is offered as a bootstrap only when the
+  caller selects no source; an explicitly chosen authority still fails loudly.
+  Rationale: the snapshot stands in for the default authority alone. Offering
+  it for a caller-selected source would silently substitute unrelated policy
+  and would weaken the existing offline `FileNotFoundError` contract.
+  Date/Author: 2026-09-14, EP-M1 implementation.
 - Decision: the builder runs Typos itself, pinned as a Python dependency.
   Rationale: owner goal of near-zero consumer code; `typos==1.48.0` is a
   PyPI binary wheel. ADR 0001 is amended in M6 to say running Typos and
@@ -385,8 +411,19 @@ grows past review size).
 
 Each milestone records red and green evidence here.
 
-- M1 red: `uv run pytest tests/test_http.py -k bootstrap` fails with
-  `AttributeError` or assertion on status. Green: passes; `make all` green.
+- M1 red (2026-09-14 23:15Z): `uv run pytest tests/test_http.py
+  tests/test_build.py -q` with the new tests marked
+  `xfail(strict=True)` reports `1 failed, 20 passed, 8 xfailed`. The eight
+  xfails are the bootstrap and default-source contracts; the failure is
+  `test_bundled_authority_contains_handwritten_policy` with
+  `AttributeError: module 'typos_config_builder.builder' has no attribute
+  'bundled_authority'`.
+- M1 green (2026-09-14 23:35Z): with the markers removed,
+  `uv run pytest tests/test_http.py tests/test_build.py -q` reports
+  `29 passed`, and `uv run pytest tests/test_cli.py -q` reports `5 passed`.
+  `uv run typos-config-builder --repository .` reports `current: typos.toml`
+  and the pinned Typos 1.48.0 run over tracked Markdown exits 0. The full
+  `make all` gate is run by the lead.
 - M2 red: `uv run pytest tests/test_patterns.py -k optional_group` fails with
   `ValueError: ignore pattern has unsafe repetition`. Green: passes; reject
   corpus still raises.
@@ -434,3 +471,34 @@ DEFAULT_SOURCE = "https://raw.githubusercontent.com/leynos/agent-helper-scripts/
 ```
 
 Runtime dependencies: `cyclopts`, `pathspec`, `typos`.
+
+## Revision notes
+
+- 2026-09-14 23:45Z: EP-M1 implemented. `builder.DEFAULT_SOURCE` now selects
+  the live shared dictionary and `builder.bundled_authority()` is public.
+  `cache.RefreshOptions` gained `bootstrap`, and `cache.bootstrap_cache`
+  writes the snapshot with `{"source", "sha256", "bootstrap"}` metadata.
+  `http.py` calls it from `_stale_cache_or_raise` and from the offline path,
+  logging the `bootstrap` decision at WARNING. The bootstrap is configured by
+  `build` only when the caller selects no source, so an explicitly chosen
+  authority still fails loudly; this keeps the existing offline
+  `FileNotFoundError` contract intact. Documentation, the ADR amendment, and
+  this repository's `spelling` target were updated, and `typos.local.toml`
+  gained the inline-code ignore pattern noted under Surprises.
+- 2026-09-14 23:58Z: `bootstrap_cache` took five parameters and tripped the
+  Ruff argument-count rules. Its cache, metadata, snapshot, and source
+  parameters were grouped into a frozen `cache.BootstrapRequest`, built by the
+  new `RefreshOptions.bootstrap_request` method, which also carries the
+  "no snapshot configured" decision. The function now takes a request, a
+  validator, and a writer, and always returns a result. `http.py` fell to 397
+  lines. Evidence: `uv run ruff check`, `uv run ruff format --check`, and
+  `uv run interrogate --fail-under 100` over `typos_config_builder tests` all
+  pass, and `uv run pytest tests -q` reports `34 passed`.
+- 2026-09-15 00:10Z: `ty` rejected the seam test's `options: object`
+  annotation. The fake `cache.refresh` in
+  `tests/test_build.py::test_default_source_is_live_authority` now annotates
+  its parameters with the real seam types, `str | Path`, `Path`,
+  `ContentValidator`, and `RefreshOptions`. Evidence:
+  `uv run ty check typos_config_builder tests` reports `All checks passed!`,
+  with Ruff check, Ruff format check, and `uv run pytest tests -q`
+  (`34 passed`) still green.

@@ -13,6 +13,9 @@ accepted = []
 [patterns]
 ignore = [
   'Center \| Microsoft Learn',
+  # Inline code quotes external API identifiers that keep US spelling. The
+  # shared dictionary gains this pattern in EP-M7; remove it here afterwards.
+  '`[^`\n]+`',
 ]
 
 [files]

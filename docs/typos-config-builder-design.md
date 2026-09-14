@@ -46,10 +46,21 @@ The package does not own:
 - Nixie or Merman CLI installation and execution; or
 - a general policy, workflow, or external-command framework.
 
-The shared dictionary is bundled and versioned with this package. Each consumer
-owns its local overlay and pins both this package and its Typos binary. The
-`--source` option permits an explicit alternative authority without turning
-source discovery into a builder responsibility.
+The authoritative shared dictionary is the live copy on the `main` branch of
+`leynos/agent-helper-scripts`, which the builder fetches by default. An edit to
+that dictionary therefore reaches every consumer on its next run, with no
+consumer change and no builder release. Each consumer owns its local overlay
+and pins both this package and its Typos binary. The `--source` option permits
+an explicit alternative authority without turning source discovery into a
+builder responsibility.
+
+A snapshot of the shared dictionary remains packaged, but only as a bootstrap
+fallback. It seeds the cache when no valid cache exists for the selected
+authority and that authority cannot be reached, including a first offline run.
+A valid cache is never replaced by the snapshot; an unreachable authority with
+a matching cache yields a stale-cache result instead. Bootstrap metadata
+records the selected authority and a `bootstrap` marker, so the next successful
+refresh replaces the snapshot in the ordinary way.
 
 Phrase corrections remain in the cached policy for consumer-side enforcement.
 Typos splits punctuation-separated phrases into individual words, so its

@@ -7,8 +7,14 @@ from pathlib import Path
 import pytest
 from conftest import AuthorityFactory, authority_text
 
-from typos_config_builder import ConfigDriftError, build
-from typos_config_builder.cache import atomic_write, read_metadata
+from typos_config_builder import ConfigDriftError, build, builder
+from typos_config_builder.cache import (
+    ContentValidator,
+    RefreshOptions,
+    RefreshResult,
+    atomic_write,
+    read_metadata,
+)
 from typos_config_builder.patterns import validate_local_exceptions
 
 # Split intentional misspellings so the test source passes its own spelling gate.
@@ -202,9 +208,37 @@ def test_broad_file_glob_equivalents_are_rejected(pattern: str) -> None:
 
 def test_bundled_authority_contains_handwritten_policy(repository: Path) -> None:
     """The authority accepts the compound and records hyphen correction metadata."""
-    build(repository)
+    build(repository, source=builder.bundled_authority())
 
     words = generated_words(repository)
     cached = tomllib.loads((repository / CACHE_NAME).read_text(encoding="utf-8"))
     assert words["handwritten"] == "handwritten"
     assert cached["phrases"]["corrections"][HYPHENATED_HANDWRITTEN] == "handwritten"
+
+
+def test_default_source_is_live_authority(
+    monkeypatch: pytest.MonkeyPatch,
+    repository: Path,
+) -> None:
+    """Omitting a source selects the live authority with a bundled bootstrap."""
+    captured: dict[str, object] = {}
+
+    def fake_refresh(
+        source: str | Path,
+        cache_path: Path,
+        validate: ContentValidator,
+        options: RefreshOptions,
+    ) -> RefreshResult:
+        """Record the selected authority and seed the cache without a fetch."""
+        captured["source"] = source
+        captured["bootstrap"] = options.bootstrap
+        atomic_write(cache_path, builder.bundled_authority().read_bytes())
+        return RefreshResult("refreshed", cache_path)
+
+    monkeypatch.setattr(builder.cache, "refresh", fake_refresh)
+
+    build(repository)
+
+    assert captured["source"] == builder.DEFAULT_SOURCE
+    assert builder.DEFAULT_SOURCE.startswith("https://raw.githubusercontent.com/")
+    assert captured["bootstrap"] == builder.bundled_authority()

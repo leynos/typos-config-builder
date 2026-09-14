@@ -106,6 +106,26 @@ def _log_decision(
     )
 
 
+def _bootstrap_or_none(
+    state: _RemoteRequestState,
+    context: _RefreshContext,
+) -> cache_support.RefreshResult | None:
+    """Seed the cache from a configured snapshot, or report none is configured."""
+    request = context.options.bootstrap_request(state.cache, state.source)
+    if request is None:
+        return None
+    result = cache_support.bootstrap_cache(
+        request, context.validate, context.atomic_write
+    )
+    _log_decision(
+        "bootstrap",
+        "bundled",
+        error_class="network-unavailable",
+        level=logging.WARNING,
+    )
+    return result
+
+
 def _local_cache_is_current(
     cache: pathlib.Path,
     saved: cabc.Mapping[str, object],
@@ -268,7 +288,10 @@ def _stale_cache_or_raise(
         error_class="network-unavailable",
         level=logging.WARNING,
     )
-    raise error
+    bootstrapped = _bootstrap_or_none(state, context)
+    if bootstrapped is None:
+        raise error
+    return bootstrapped
 
 
 def _is_current_not_modified_response(
@@ -362,8 +385,11 @@ def refresh(
             cache_support.read_metadata(options.metadata),
         )
         if not _cache_matches_saved_identity(state, validate):
-            message = f"no cached shared dictionary at {cache}"
-            raise FileNotFoundError(message)
+            bootstrapped = _bootstrap_or_none(state, context)
+            if bootstrapped is None:
+                message = f"no cached shared dictionary at {cache}"
+                raise FileNotFoundError(message)
+            return bootstrapped
         _log_decision("offline-cache", "cache")
         return cache_support.RefreshResult("offline-cache", cache)
     if isinstance(source, pathlib.Path) or "://" not in source_text:

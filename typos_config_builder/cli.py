@@ -35,7 +35,8 @@ def run(
     repository
         Consumer repository containing config-builder inputs and output.
     source
-        Local path or HTTPS authority. The bundled authority is used by default.
+        Local path or HTTPS authority. The live shared dictionary on the
+        origin's ``main`` branch is used by default.
     offline
         Require an already-valid local cache when true.
     check

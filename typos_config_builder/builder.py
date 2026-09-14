@@ -7,6 +7,10 @@ import pathlib
 
 from typos_config_builder import cache, policy, render
 
+DEFAULT_SOURCE = (
+    "https://raw.githubusercontent.com/leynos/agent-helper-scripts/"
+    "refs/heads/main/data/typos-oxendict-base.toml"
+)
 CACHE_NAME = ".typos-oxendict-base.toml"
 METADATA_NAME = ".typos-oxendict-base.json"
 OVERLAY_NAME = "typos.local.toml"
@@ -57,8 +61,23 @@ class ConfigDriftError(ConfigBuilderError):
         super().__init__(f"generated configuration is stale: {output}")
 
 
-def _bundled_authority() -> pathlib.Path:
-    """Return the installed package's shared dictionary path."""
+def bundled_authority() -> pathlib.Path:
+    """Return the packaged snapshot used to bootstrap an empty cache.
+
+    The snapshot is a fallback only. It seeds the cache when the live
+    authority cannot be reached and no valid cache exists, so a first run
+    still has shared policy to render.
+
+    Returns
+    -------
+    pathlib.Path
+        Path to the shared dictionary shipped inside the installed package.
+
+    Examples
+    --------
+    >>> bundled_authority().name
+    'typos-oxendict-base.toml'
+    """
     return pathlib.Path(__file__).with_name("data") / "typos-oxendict-base.toml"
 
 
@@ -93,7 +112,8 @@ def build(
     repository
         Consumer repository containing the overlay and generated configuration.
     source
-        Local path or HTTPS authority. The bundled authority is used by default.
+        Local path or HTTPS authority. The live shared dictionary at
+        ``DEFAULT_SOURCE`` is used by default.
     offline
         Require an already-valid local cache when true.
     check
@@ -119,7 +139,8 @@ def build(
     >>> result.output.name
     'typos.toml'
     """
-    selected_source = _bundled_authority() if source is None else source
+    selected_source = DEFAULT_SOURCE if source is None else source
+    bootstrap = bundled_authority() if source is None else None
     refresh_result = cache.refresh(
         selected_source,
         repository / CACHE_NAME,
@@ -127,6 +148,7 @@ def build(
         cache.RefreshOptions(
             metadata=repository / METADATA_NAME,
             offline=offline,
+            bootstrap=bootstrap,
         ),
     )
     output = repository / OUTPUT_NAME
