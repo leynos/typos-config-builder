@@ -176,6 +176,18 @@ R1 to R14 are the requirement identifiers used below.
   creating a PyPI project needs the owner's account.
   Date/Author: 2026-09-14, lead session.
 
+- Decision: the inline-code ignore pattern is not pushed upstream in EP-M7.
+  Rationale: the origin's own tests and users' guide assert that inline code
+  is checked, so masking it estate-wide is a policy change rather than a
+  sync. The bundled snapshot has carried the pattern since the first builder
+  commit, so cohort A repositories have masked inline code for two months
+  while the 36 legacy repositories have not. Pending owner ruling: either
+  add the pattern to the shared dictionary (and change the origin's tests)
+  or drop it from the snapshot and let repositories that need it carry one
+  overlay line. Until ruled, this repository keeps the overlay entry and
+  EP-M7 ships only the two style-guide patterns.
+  Date/Author: 2026-09-14, lead session.
+
 ## Outcomes & retrospective
 
 To be completed at each milestone boundary.
