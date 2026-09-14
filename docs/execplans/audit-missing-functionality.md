@@ -107,13 +107,20 @@ R1 to R14 are the requirement identifiers used below.
   bootstrap fallback: `DEFAULT_SOURCE`, `bundled_authority()`,
   `RefreshOptions.bootstrap`, `cache.bootstrap_cache`, tests, docs, ADR
   amendment, and this repository's write-mode `spelling` target.
-- [ ] EP-M2 regex-safety relaxation for optional groups.
+- [x] (2026-09-15 01:20Z) EP-M2 regex-safety relaxation for optional
+  groups: `patterns._is_at_most_once`, the relaxed
+  `_consume_atom_or_operator` guard, and `tests/test_patterns.py` with
+  the INV-3 corpora and two Hypothesis properties.
 - [ ] EP-M3 hardening: 429 transient, response size cap, `[patterns] remove`.
 - [ ] EP-M4 `check-phrases` command.
 - [ ] EP-M5 `gate` command with pinned Typos and `--scope`.
 - [ ] EP-M6 port fork tests worth keeping; docs and ADR amendment; tag.
-- [ ] EP-M7 agent-helper-scripts: inline-code and style-guide patterns,
-  docs pointing at the builder.
+- [ ] EP-M7 agent-helper-scripts: style-guide patterns and docs pointing
+  at the builder. (2026-09-14 22:35Z) PR leynos/agent-helper-scripts#152
+  opened from worktree `feature/typos-shared-patterns`; CodeRabbit review
+  queued (comenq 03e6db1f, ETA about nine hours); merge on green pending.
+  The inline-code pattern was withdrawn from this milestone (see Decision
+  log).
 - [ ] EP-M8 cohort A consumers (28 repos).
 - [ ] EP-M9 cohort B1 consumers (22 repos).
 - [ ] EP-M10 templates and cohort B2 (2 templates, 7 repos).
@@ -135,6 +142,17 @@ R1 to R14 are the requirement identifiers used below.
   Implication for consumers: every consumer whose first run uses the live
   authority loses that pattern until EP-M7 ships, so EP-M7 should precede the
   consumer batches EP-M8 to EP-M12.
+- Observation: the scanner already accepts Python's open-lower-bound form
+  `a{,3}b`, which is bounded repetition and therefore safe. EP-M2's reject
+  corpus was drafted with that pattern as a candidate rejection; the checked
+  behaviour was kept instead and the pattern now sits in the accept corpus as
+  a regression guard.
+- Observation: the test source for EP-M2 quotes consumer overlay patterns
+  that exist precisely to protect US or product spellings, so the file failed
+  this repository's own Typos run. The four offending words are spliced from
+  fragments, following the convention already used in `tests/test_build.py`.
+  EP-M5's `gate --scope all` will subject every Python file to the same
+  treatment, so the convention should be documented before that lands.
 - Observation: `http.py` reached 402 lines when the bootstrap fallback was
   added inline. The snapshot write now lives in `cache.bootstrap_cache` and
   `http.py` stands at 399 lines, leaving almost no headroom for EP-M3's 429
@@ -436,9 +454,23 @@ Each milestone records red and green evidence here.
   `uv run typos-config-builder --repository .` reports `current: typos.toml`
   and the pinned Typos 1.48.0 run over tracked Markdown exits 0. The full
   `make all` gate is run by the lead.
-- M2 red: `uv run pytest tests/test_patterns.py -k optional_group` fails with
-  `ValueError: ignore pattern has unsafe repetition`. Green: passes; reject
-  corpus still raises.
+- M2 red (2026-09-15 01:05Z): `uv run pytest tests/test_patterns.py -q` with
+  the six compounding accept-corpus parameters and the optional-wrapper
+  property marked `xfail(strict=True)` reports `13 passed, 7 xfailed`. Each
+  xfail is `ValueError: ignore pattern has unsafe repetition`.
+- M2 green (2026-09-15 01:15Z): with the markers removed the same command
+  reports `20 passed`, and `uv run pytest tests/test_build.py -q` reports
+  `13 passed`, so `test_broad_file_glob_equivalents_are_rejected` is intact.
+  Non-vacuity: `--hypothesis-show-statistics` records both branches of the
+  optional-wrapper event (54% without an inner repetition, 40% with one).
+  Negative control: mutating `_is_at_most_once` to `return False` turns the
+  green run into `7 failed, 13 passed`, the six compounding accept-corpus
+  parameters plus the property. The mutation was applied by hand, observed,
+  and reverted; the test file only describes it.
+  `uv run ruff check typos_config_builder tests` and
+  `uv run ruff format typos_config_builder tests` are clean, and
+  `uv run typos --config typos.toml` over both changed files finds nothing.
+  The full `make all` gate is run by the lead.
 - M4 red: `uv run pytest tests/test_phrases.py` fails on import. Green: all
   pass; running `uv run typos-config-builder check-phrases` in this
   repository exits 0.
@@ -514,3 +546,13 @@ Runtime dependencies: `cyclopts`, `pathspec`, `typos`.
   `uv run ty check typos_config_builder tests` reports `All checks passed!`,
   with Ruff check, Ruff format check, and `uv run pytest tests -q`
   (`34 passed`) still green.
+- 2026-09-15 01:20Z: EP-M2 implemented. `patterns._is_at_most_once` reads a
+  quantifier and reports whether it can repeat its atom at most once; `?`,
+  `{0,1}` and `{1}` qualify, while `*`, `+`, `{1,}` and `{2,5}` do not.
+  `_RepetitionScanner._consume_atom_or_operator` passes
+  `repeats_ambiguous_group` only when the quantifier is not at most once, so
+  an optional group holding an inner repetition or alternation is accepted
+  while still counting as an atom for the adjacent-repetition rule. Lazy `?`
+  after `*`, `+`, `}` or `?` is unaffected because `_is_repetition_modifier`
+  consumes it first. `hypothesis` was added to the dev dependency group.
+  `patterns.py` stands at 218 lines.

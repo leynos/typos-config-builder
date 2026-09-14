@@ -13,6 +13,7 @@ typos-config-builder = "typos_config_builder.cli:main"
 [dependency-groups]
 dev = [
     "pytest",
+    "hypothesis",
     "interrogate",
     "pip-audit",
     "ruff",
