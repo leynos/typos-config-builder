@@ -11,7 +11,7 @@ from unittest import mock
 import pytest
 from conftest import authority_text
 
-from typos_config_builder import cache, policy
+from typos_config_builder import cache, policy, remote
 
 SOURCE = "https://example.invalid/authority.toml"
 ETAG = '"shared-authority-etag"'
@@ -174,7 +174,7 @@ def test_unreachable_authority_without_cache_bootstraps_from_bundle(
     metadata = repository / "cache.json"
     options = cache.RefreshOptions(metadata=metadata, opener=opener, bootstrap=bundle)
 
-    with caplog.at_level(logging.WARNING, logger="typos_config_builder.http"):
+    with caplog.at_level(logging.WARNING, logger="typos_config_builder"):
         result = cache.refresh(SOURCE, cache_path, policy.validate_bytes, options)
 
     assert result.status == "bootstrap"
@@ -274,3 +274,77 @@ def test_unreachable_authority_without_bootstrap_still_fails(
             policy.validate_bytes,
             options,
         )
+
+
+MAX_AUTHORITY_BYTES = 10 * 1024 * 1024
+RATE_LIMITED = 429
+
+
+class _SizedResponse:
+    """Serve a fixed body while honouring the caller's read limit.
+
+    The fake proves the refresh path bounds its own read: a caller asking for
+    ``n`` bytes never receives more than ``n``.
+    """
+
+    def __init__(self, body: bytes) -> None:
+        """Hold the body this response serves and an empty header mapping."""
+        self._body = body
+        self.headers: dict[str, str] = {}
+
+    def read(self, amount: int | None = None, /) -> bytes:
+        """Return the body, truncated to ``amount`` bytes when one is given."""
+        return self._body if amount is None else self._body[:amount]
+
+    def __enter__(self) -> _SizedResponse:
+        """Enter the response context."""
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        """Leave the response context without suppressing exceptions."""
+
+
+@pytest.mark.parametrize("has_cache", [True, False])
+def test_rate_limited_status_uses_stale_cache(
+    repository: pathlib.Path,
+    *,
+    has_cache: bool,
+) -> None:
+    """HTTP 429 preserves a matching cache and otherwise reports unavailability."""
+    failure = urllib.error.HTTPError(
+        SOURCE,
+        RATE_LIMITED,
+        "rate limited",
+        http.client.HTTPMessage(),
+        None,
+    )
+    opener = mock.Mock(side_effect=failure)
+    if has_cache:
+        cache_path, options = _seed_remote_cache(repository, opener)
+        result = cache.refresh(SOURCE, cache_path, policy.validate_bytes, options)
+        assert result.status == "stale-cache"
+        return
+    options = cache.RefreshOptions(metadata=repository / "cache.json", opener=opener)
+    with pytest.raises(cache.NetworkUnavailableError):
+        cache.refresh(
+            SOURCE,
+            repository / "cache.toml",
+            policy.validate_bytes,
+            options,
+        )
+
+
+def test_oversized_authority_is_rejected(repository: pathlib.Path) -> None:
+    """A body beyond the cap is refused before validation and leaves no cache."""
+    assert remote.MAX_AUTHORITY_BYTES == MAX_AUTHORITY_BYTES
+    response = _SizedResponse(bytes(MAX_AUTHORITY_BYTES + 1))
+    opener = mock.Mock(return_value=response)
+    cache_path = repository / "cache.toml"
+    metadata = repository / "cache.json"
+    options = cache.RefreshOptions(metadata=metadata, opener=opener)
+
+    with pytest.raises(ValueError, match="exceeds"):
+        cache.refresh(SOURCE, cache_path, policy.validate_bytes, options)
+
+    assert not cache_path.exists()
+    assert not metadata.exists()

@@ -111,7 +111,10 @@ R1 to R14 are the requirement identifiers used below.
   groups: `patterns._is_at_most_once`, the relaxed
   `_consume_atom_or_operator` guard, and `tests/test_patterns.py` with
   the INV-3 corpora and two Hypothesis properties.
-- [ ] EP-M3 hardening: 429 transient, response size cap, `[patterns] remove`.
+- [x] (2026-09-15 03:05Z) EP-M3 hardening: 429 added to
+  `TRANSIENT_HTTP_STATUSES`, the `MAX_AUTHORITY_BYTES` response cap, the
+  `[patterns] remove` overlay key, and the extraction of the HTTPS path into
+  `typos_config_builder/remote.py`.
 - [ ] EP-M4 `check-phrases` command.
 - [ ] EP-M5 `gate` command with pinned Typos and `--scope`.
 - [ ] EP-M6 port fork tests worth keeping; docs and ADR amendment; tag.
@@ -153,6 +156,18 @@ R1 to R14 are the requirement identifiers used below.
   fragments, following the convention already used in `tests/test_build.py`.
   EP-M5's `gate --scope all` will subject every Python file to the same
   treatment, so the convention should be documented before that lands.
+- Observation: moving the refresh diagnostics into `remote.py` changed the
+  logger name for the bootstrap decision from `typos_config_builder.http` to
+  `typos_config_builder.remote`. The bootstrap test asserted on the former, so
+  it now captures at the package logger `typos_config_builder`, which covers
+  both modules through level inheritance and does not have to move again if the
+  decision moves module.
+- Observation: giving the newly cross-module helpers in `remote.py` full
+  numpydoc sections pushed the module to 461 lines, over the four-hundred-line
+  limit. The helpers are package-internal rather than public API, so they were
+  returned to the one-line docstring style the repository already uses for
+  module-private helpers; only `refresh_https`, the module's entry point, keeps
+  a full docstring. `remote.py` stands at 364 lines.
 - Observation: `http.py` reached 402 lines when the bootstrap fallback was
   added inline. The snapshot write now lives in `cache.bootstrap_cache` and
   `http.py` stands at 399 lines, leaving almost no headroom for EP-M3's 429
@@ -193,6 +208,16 @@ R1 to R14 are the requirement identifiers used below.
   Rationale: the release workflow only uploads wheels to GitHub Releases and
   creating a PyPI project needs the owner's account.
   Date/Author: 2026-09-14, lead session.
+
+- Decision: withdrawing a pattern the shared base does not contain is a
+  harmless no-op, not an error. This supersedes the `Plan of work` text for
+  EP-M3, which said removal of an absent pattern should be rejected.
+  Rationale: the origin's `typos_rollout_merge._merge_ignore_patterns` performs
+  a plain set subtraction, and the origin's users' guide states the no-op
+  contract explicitly. Rejecting would break every consumer overlay the moment
+  shared policy retired a pattern, which is precisely when the overlay is
+  least able to respond.
+  Date/Author: 2026-09-15, EP-M3 implementation.
 
 - Decision: the inline-code ignore pattern is not pushed upstream in EP-M7.
   Rationale: the origin's own tests and users' guide assert that inline code
@@ -471,6 +496,19 @@ Each milestone records red and green evidence here.
   `uv run ruff format typos_config_builder tests` are clean, and
   `uv run typos --config typos.toml` over both changed files finds nothing.
   The full `make all` gate is run by the lead.
+- M3 red (2026-09-15 02:30Z): with the three `[patterns] remove` contracts
+  marked `xfail(strict=True)`, `uv run pytest tests/test_build.py -q` reports
+  `13 passed, 3 xfailed`; with the 429 and size-cap contracts marked the same
+  way, `uv run pytest tests/test_http.py -q` reports `16 passed, 3 xfailed`.
+- M3 green (2026-09-15 03:00Z): after implementation the same files report
+  `16 passed` and `19 passed` with every marker removed, and
+  `uv run pytest tests/test_cli.py -q` and `tests/test_patterns.py -q` report
+  `5 passed` and `20 passed`. Non-vacuity: leaving the markers in place turns
+  the green run into three strict `XPASS` failures, which is how the
+  implementation was confirmed to be the cause of the change. `ruff format`,
+  `ruff check`, `ty check`, and `interrogate --fail-under 100` over
+  `typos_config_builder tests` all pass. `http.py` is 157 lines and the new
+  `remote.py` is 364 lines. The full `make all` gate is run by the lead.
 - M4 red: `uv run pytest tests/test_phrases.py` fails on import. Green: all
   pass; running `uv run typos-config-builder check-phrases` in this
   repository exits 0.
@@ -546,6 +584,25 @@ Runtime dependencies: `cyclopts`, `pathspec`, `typos`.
   `uv run ty check typos_config_builder tests` reports `All checks passed!`,
   with Ruff check, Ruff format check, and `uv run pytest tests -q`
   (`34 passed`) still green.
+- 2026-09-15 03:05Z: EP-M3 implemented. The HTTPS refresh path moved out of
+  `http.py` into the new `typos_config_builder/remote.py`, which owns transport
+  safety, conditional requests, the bounded response read, the stale-cache and
+  bootstrap fallbacks, the cache-identity checks, and the bounded refresh
+  diagnostics. `http.py` keeps the local and offline paths and the `refresh`
+  entry point, imports `remote`, and re-exports `HTTP_NOT_MODIFIED`,
+  `TRANSIENT_HTTP_STATUSES`, and `MAX_AUTHORITY_BYTES` so callers keep one
+  import site. The offline branch of `refresh` became `_refresh_offline` and
+  `_offline_source_name` during the move. `TRANSIENT_HTTP_STATUSES` gained 429.
+  `remote._bounded_body` reads at most `MAX_AUTHORITY_BYTES + 1` bytes and
+  raises `ValueError` before validation when the body is larger, leaving the
+  cache and its metadata untouched; `cache.RemoteResponse.read` gained an
+  optional positional size to describe that call. `policy.Dictionary` gained
+  `removed_patterns`, `_from_text` parses and compiles `[patterns] remove`, and
+  `policy._merge_ignore_patterns` subtracts overlay withdrawals from the union
+  and rejects an overlay that both ignores and removes a pattern.
+  `removed_patterns` is never rendered. The users' guide documents the
+  withdrawal key, the 429 behaviour, and the size cap; the developers' guide
+  records the one-way `http` to `remote` import direction.
 - 2026-09-15 01:20Z: EP-M2 implemented. `patterns._is_at_most_once` reads a
   quantifier and reports whether it can repeat its atom at most once; `?`,
   `{0,1}` and `{1}` qualify, while `*`, `+`, `{1,}` and `{2,5}` do not.

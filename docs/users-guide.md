@@ -39,6 +39,27 @@ The local overlay is only for repository-specific accepted terms, corrections,
 patterns, and file exclusions. It must not weaken or contradict the shared
 policy.
 
+### Withdraw a shared ignore pattern
+
+A repository that needs stricter checking than the shared policy provides may
+list exact shared ignore expressions under `[patterns] remove` in
+`typos.local.toml`:
+
+```toml
+schema = 1
+
+[patterns]
+remove = ['`[^`\n]+`']
+```
+
+Generation unions the shared and local `ignore` lists and then subtracts every
+entry in `remove`, so a withdrawn pattern never reaches `typos.toml`. Matching
+is by exact expression text. Removing a pattern the shared base does not
+contain is a harmless no-op, so an overlay does not break when shared policy
+retires a pattern. Listing the same expression under both `ignore` and
+`remove` is contradictory and is rejected. Withdrawals are policy metadata:
+they are never rendered into the generated configuration.
+
 ## Generate configuration
 
 Run the command without `--check` to refresh the cache, merge the local
@@ -68,6 +89,13 @@ https://raw.githubusercontent.com/leynos/agent-helper-scripts/refs/heads/main/da
 Because the authority is live, an edit to the shared dictionary reaches every
 consumer on its next run. No consumer change, pin bump, or builder release is
 required to pick up a new accepted word.
+
+A refresh treats HTTP 429 like the temporary server statuses 500, 502, 503,
+and 504: the run keeps a valid cache for the selected authority and reports
+`stale-cache` rather than failing. A response body larger than ten mebibytes is
+rejected with an error before any parsing or validation, and the cache is left
+untouched, so a misrouted or hostile response cannot exhaust memory or replace
+shared policy.
 
 The package still ships a snapshot of the shared dictionary, but only as a
 bootstrap fallback. The builder writes that snapshot to the cache when, and

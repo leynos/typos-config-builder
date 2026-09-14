@@ -16,6 +16,7 @@ from typos_config_builder.cache import (
     read_metadata,
 )
 from typos_config_builder.patterns import validate_local_exceptions
+from typos_config_builder.policy import load
 
 # Split intentional misspellings so the test source passes its own spelling gate.
 PLAIN_BRITISH_ORGANIZE = "organi" + "se"
@@ -242,3 +243,62 @@ def test_default_source_is_live_authority(
     assert captured["source"] == builder.DEFAULT_SOURCE
     assert builder.DEFAULT_SOURCE.startswith("https://raw.githubusercontent.com/")
     assert captured["bootstrap"] == builder.bundled_authority()
+
+
+SHARED_IGNORE_PATTERN = r"\bSPDX-[A-Za-z0-9.-]+"
+ABSENT_IGNORE_PATTERN = r"\bRFC-[0-9]+"
+
+
+def generated_ignore_patterns(repository: Path) -> list[str]:
+    """Load the generated Typos ignore expressions from a repository."""
+    generated = tomllib.loads((repository / OUTPUT_NAME).read_text(encoding="utf-8"))
+    return generated["default"]["extend-ignore-re"]
+
+
+def write_overlay(repository: Path, body: str) -> Path:
+    """Write a sparse overlay containing one ``[patterns]`` table."""
+    overlay = repository / "typos.local.toml"
+    overlay.write_text(f"schema = 1\n\n[patterns]\n{body}", encoding="utf-8")
+    return overlay
+
+
+def test_local_patterns_remove_withdraws_shared_pattern(
+    authority_factory: AuthorityFactory,
+    repository: Path,
+) -> None:
+    """An overlay withdrawal drops a shared ignore pattern from the output."""
+    authority = authority_factory(ignore=(SHARED_IGNORE_PATTERN,))
+    write_overlay(repository, f"remove = ['{SHARED_IGNORE_PATTERN}']\n")
+
+    build(repository, source=authority)
+
+    assert SHARED_IGNORE_PATTERN not in generated_ignore_patterns(repository)
+
+
+def test_removing_an_absent_pattern_is_a_no_op(
+    authority_factory: AuthorityFactory,
+    repository: Path,
+) -> None:
+    """Withdrawing a pattern the shared base lacks is accepted and changes nothing."""
+    authority = authority_factory(ignore=(SHARED_IGNORE_PATTERN,))
+    overlay = write_overlay(repository, f"remove = ['{ABSENT_IGNORE_PATTERN}']\n")
+
+    build(repository, source=authority)
+
+    assert load(overlay, sparse=True).removed_patterns == (ABSENT_IGNORE_PATTERN,)
+    assert generated_ignore_patterns(repository) == [SHARED_IGNORE_PATTERN]
+
+
+def test_overlay_cannot_both_ignore_and_remove_a_pattern(
+    authority_factory: AuthorityFactory,
+    repository: Path,
+) -> None:
+    """A contradictory overlay is rejected rather than resolved silently."""
+    authority = authority_factory(ignore=(SHARED_IGNORE_PATTERN,))
+    write_overlay(
+        repository,
+        f"ignore = ['{SHARED_IGNORE_PATTERN}']\nremove = ['{SHARED_IGNORE_PATTERN}']\n",
+    )
+
+    with pytest.raises(ValueError, match="both ignores and removes patterns"):
+        build(repository, source=authority)

@@ -26,8 +26,8 @@ class RemoteResponse(typ.Protocol):
 
     headers: cabc.Mapping[str, str]
 
-    def read(self) -> bytes:
-        """Read the response body."""
+    def read(self, amount: int | None = None, /) -> bytes:
+        """Read the response body, at most ``amount`` bytes when given."""
         ...
 
     def __enter__(self) -> typ.Self:
