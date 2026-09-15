@@ -134,6 +134,10 @@ R1 to R14 are the requirement identifiers used below.
   (builder fails closed), fork scaffolding tests, and ortho-config's
   10-row broad-exception matrix, which remains a small open gap. Full
   gate: 134 passed. Tag `v0.1.0` follows the builder PR merge.
+  (2026-09-15 17:30Z) PR leynos/typos-config-builder#69 opened from this
+  branch; CodeRabbit review queued via comenq. PR
+  leynos/agent-helper-scripts#152 is green on CI at daa2356 with a fresh
+  review queued (7956e7ab).
 - [ ] EP-M7 agent-helper-scripts: style-guide patterns and docs pointing
   at the builder. (2026-09-14 22:35Z) PR leynos/agent-helper-scripts#152
   opened from worktree `feature/typos-shared-patterns`; CodeRabbit review
