@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import pathlib
+import subprocess  # noqa: S404
 import sys
 import typing as typ
 
 import cyclopts
 from cyclopts import App, Parameter
 
+from typos_config_builder import phrases
 from typos_config_builder.builder import ConfigDriftError, build
 
 app = App(config=cyclopts.config.Env("TYPOS_CONFIG_BUILDER_", command=False))
@@ -61,6 +63,49 @@ def run(
         print(f"error: {error}", file=sys.stderr)
         raise SystemExit(1) from error
     print(f"{result.refresh_status}: {result.output}")
+
+
+@app.command
+def check_phrases(repository: pathlib.Path | None = None) -> None:
+    """Report shared phrase corrections violated by tracked text.
+
+    The check fails closed: a tracked file that cannot be read or decoded
+    is an error rather than a silent skip.
+
+    Parameters
+    ----------
+    repository
+        Repository whose tracked files should be checked. Defaults to the
+        current working directory.
+
+    Raises
+    ------
+    SystemExit
+        Two when prohibited phrases are found, one when policy cannot be
+        loaded or tracked text cannot be scanned.
+
+    Examples
+    --------
+    >>> check_phrases(pathlib.Path("."))  # doctest: +SKIP
+    """
+    repository = pathlib.Path.cwd() if repository is None else repository
+    try:
+        findings = phrases.find_phrases(repository, phrases.load_policy(repository))
+    except (
+        OSError,
+        ValueError,
+        phrases.PhraseScanError,
+        subprocess.CalledProcessError,
+    ) as error:
+        print(f"error: {error}", file=sys.stderr)
+        raise SystemExit(1) from error
+    for finding in findings:
+        print(
+            f"{finding.path}:{finding.line}:{finding.column}: "
+            f"{finding.phrase} -> {finding.correction}"
+        )
+    if findings:
+        raise SystemExit(2)
 
 
 def main() -> None:

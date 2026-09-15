@@ -115,7 +115,10 @@ R1 to R14 are the requirement identifiers used below.
   `TRANSIENT_HTTP_STATUSES`, the `MAX_AUTHORITY_BYTES` response cap, the
   `[patterns] remove` overlay key, and the extraction of the HTTPS path into
   `typos_config_builder/remote.py`.
-- [ ] EP-M4 `check-phrases` command.
+- [x] (2026-09-15 06:20Z) EP-M4 `check-phrases` command:
+  `typos_config_builder/phrases.py`, the Cyclopts `check-phrases` command,
+  the `pathspec` dependency, `tests/test_phrases.py`, three command-boundary
+  tests, the users' guide section, and this repository's `spelling` target.
 - [ ] EP-M5 `gate` command with pinned Typos and `--scope`.
 - [ ] EP-M6 port fork tests worth keeping; docs and ADR amendment; tag.
 - [ ] EP-M7 agent-helper-scripts: style-guide patterns and docs pointing
@@ -168,6 +171,32 @@ R1 to R14 are the requirement identifiers used below.
   returned to the one-line docstring style the repository already uses for
   module-private helpers; only `refresh_https`, the module's entry point, keeps
   a full docstring. `remote.py` stands at 364 lines.
+- Observation: `policy.Dictionary` normalizes every list by sorting it, so a
+  gitignore re-inclusion such as `!README.md` is ordered before the `*.md` it
+  was written to qualify. Gitignore gives the last matching pattern priority,
+  so the re-inclusion is inert, both in `check-phrases` and in the generated
+  `extend-exclude` that Typos itself reads.
+  Response: EP-M4 mirrors the generated configuration rather than inventing a
+  different order, so the gate and Typos agree. The behaviour is documented in
+  the users' guide and pinned by
+  `tests/test_phrases.py::test_excluded_globs_apply_in_normalized_order`.
+  Implication: this predates EP-M4 and affects every consumer that wrote a
+  re-inclusion. Preserving author order would change rendered output and so
+  touches INV-1; it needs an owner ruling rather than a quiet fix, and is
+  raised as an open question rather than actioned here.
+- Observation: the packaged snapshot `typos_config_builder/data/
+  typos-oxendict-base.toml` is itself a policy document listing the prohibited
+  phrases, so the first `check-phrases` run in this repository reported shared
+  policy as a finding. `POLICY_PATHS` cannot name it, because that path is
+  specific to this repository and no consumer carries it.
+  Response: this repository's `typos.local.toml` excludes the snapshot, which is
+  the designed repository-specific knob. `agent-helper-scripts` solves the same
+  problem the same way in its own vendored checker.
+- Observation: `phrases.py` stands at 389 lines with full numpydoc sections, so
+  it has almost no headroom under the four-hundred-line limit. EP-M5 puts the
+  Typos runner in a separate `gate.py`, but any further phrase behaviour should
+  be extracted into a sibling module rather than appended. The developers' guide
+  records this.
 - Observation: `http.py` reached 402 lines when the bootstrap fallback was
   added inline. The snapshot write now lives in `cache.bootstrap_cache` and
   `http.py` stands at 399 lines, leaving almost no headroom for EP-M3's 429
@@ -234,6 +263,15 @@ R1 to R14 are the requirement identifiers used below.
 ## Outcomes & retrospective
 
 To be completed at each milestone boundary.
+
+EP-M4: the phrase gate landed as a single leaf module with no change to the
+existing default command. The two behaviours worth carrying forward are the
+mark-then-blank masking, which only an explicit overlapping-span example can
+falsify, and failing closed on unreadable tracked files, which immediately
+surfaced a real finding in this repository's own packaged snapshot. One open
+question is left for the owner: normalization sorts file exclusions, which makes
+gitignore re-inclusion inert estate-wide. EP-M4 preserved the existing
+behaviour rather than diverging from the generated configuration.
 
 ## Context and orientation
 
@@ -509,9 +547,42 @@ Each milestone records red and green evidence here.
   `ruff check`, `ty check`, and `interrogate --fail-under 100` over
   `typos_config_builder tests` all pass. `http.py` is 157 lines and the new
   `remote.py` is 364 lines. The full `make all` gate is run by the lead.
-- M4 red: `uv run pytest tests/test_phrases.py` fails on import. Green: all
-  pass; running `uv run typos-config-builder check-phrases` in this
-  repository exits 0.
+- M4 red (2026-09-15 05:05Z): with `typos_config_builder/phrases.py` present
+  only as signatures raising `NotImplementedError` and the new contracts marked
+  `xfail(strict=True)`, `uv run pytest tests/test_phrases.py -q` reports
+  `14 xfailed` and `uv run pytest tests/test_cli.py -q` reports
+  `5 passed, 3 xfailed`, so the five pre-existing command tests were unaffected.
+- M4 green (2026-09-15 06:15Z): with the markers removed and the module
+  implemented, `uv run pytest tests/test_phrases.py -q` reports `14 passed` and
+  `uv run pytest tests/test_cli.py -q` reports `8 passed`.
+  Non-vacuity (INV-4): replacing mark-then-blank with a sequential
+  `pattern.sub` per pattern turns the green run into `1 failed, 13 passed`, and
+  the single failure is
+  `test_mask_marks_overlapping_spans_against_the_original_text`, which observes
+  the phrase surviving inside the second span where the mark-then-blank
+  implementation blanks it.
+  The single-pattern Hypothesis property still passes under that mutation,
+  which is why the explicit overlapping example is kept alongside it. The
+  mutation was applied by hand, observed, and reverted; only the test docstring
+  describes it.
+  Non-vacuity (INV-5): the boundary property records both branches of the
+  `boundaries permit a finding` event, and the masking property records both
+  branches of `surrounding content is empty`; the masking property also asserts
+  that the same text without the ignore pattern does produce a finding.
+  `uv run ruff format`, `uv run ruff check`, `uv run ty check`, and
+  `uv run interrogate --fail-under 100` over `typos_config_builder tests` all
+  pass. `uv run typos --config typos.toml --force-exclude` over the seven
+  changed source and documentation files finds nothing.
+  `uv run typos-config-builder check-phrases --repository .` exits 0.
+  `phrases.py` is 389 lines. The full `make all` gate is run by the lead.
+- M4 pylint (2026-09-15 07:05Z): the lead's `make lint-python` run reported
+  five `C1803 use-implicit-booleaness-not-comparison` findings in
+  `tests/test_phrases.py`, where emptiness was asserted as `== ()` and
+  non-emptiness as `!= ()`. The assertions now use truthiness and carry short
+  failure messages, which restores the diagnostic the comparison used to give.
+  The PyPy-backed runner then reports `10.00/10` over
+  `typos_config_builder tests`, and `tests/test_phrases.py` and
+  `tests/test_cli.py` still report `14 passed` and `8 passed`.
 - M5 red: `uv run pytest tests/test_gate.py` fails on import. Green: all
   pass; `uv run typos-config-builder gate` in this repository exits 0.
 
@@ -603,6 +674,25 @@ Runtime dependencies: `cyclopts`, `pathspec`, `typos`.
   `removed_patterns` is never rendered. The users' guide documents the
   withdrawal key, the 429 behaviour, and the size cap; the developers' guide
   records the one-way `http` to `remote` import direction.
+- 2026-09-15 06:20Z: EP-M4 implemented. `typos_config_builder/phrases.py`
+  provides `PhraseFinding`, `PhrasePolicy`, `PhraseScanError`, `load_policy`,
+  `tracked_files`, `mask`, `scan_text`, and `find_phrases`. `load_policy` reuses
+  `builder.CACHE_NAME`, `OVERLAY_NAME`, `METADATA_NAME`, and `OUTPUT_NAME`, and
+  names the builder invocation when the cache is absent. `tracked_files`
+  resolves `git` through `shutil.which` and runs `ls-files -z` with
+  `stdin=DEVNULL` and `check=True`. Masking marks every span of every compiled
+  ignore expression against the original text and blanks the marked characters
+  in one pass, preserving newlines. `find_phrases` skips `POLICY_PATHS`, paths
+  matched by `pathspec.GitIgnoreSpec`, and tracked symlinks, and wraps `OSError`
+  and `UnicodeDecodeError` in `PhraseScanError` with the cause chained.
+  `cli.py` gained the `check-phrases` command, which exits 2 on findings and 1
+  with a single `error:` line for `OSError`, `ValueError`, `PhraseScanError`,
+  and `subprocess.CalledProcessError`. `pathspec>=1.1.1,<2` was added to the
+  runtime dependencies and locked at 1.1.1. The `spelling` target now runs
+  `check-phrases` after Typos, and this repository's overlay excludes the
+  packaged snapshot for the reason recorded under Surprises.
+  The plan's Interfaces section already named `check_phrases`; the delivered
+  signature matches it.
 - 2026-09-15 01:20Z: EP-M2 implemented. `patterns._is_at_most_once` reads a
   quantifier and reports whether it can repeat its atom at most once; `?`,
   `{0,1}` and `{1}` qualify, while `*`, `+`, `{1,}` and `{2,5}` do not.

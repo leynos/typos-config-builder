@@ -21,6 +21,19 @@ local and offline paths and the `refresh` entry point, and imports `remote`.
 The dependency runs in that one direction only, so shared helpers belong in
 `remote.py` rather than being imported back out of `http.py`.
 
+`phrases.py` enforces the shared phrase corrections. It imports `builder`
+for the policy file names, `policy` for loading and merging, and `patterns` for
+compiling ignore expressions; nothing in the package imports it except `cli`,
+so it stays a leaf. It is the only module that runs a subprocess, resolving
+`git` through `shutil.which` and closing standard input so a command double
+cannot wedge the gate on an inherited terminal. Masking marks every ignored
+span against the original text and blanks the marked characters in one pass,
+which keeps offsets exact and keeps overlapping spans ignored; a sequential
+substitution per pattern does not. Reads fail closed: an unreadable or
+undecodable tracked file raises `PhraseScanError` with the cause chained,
+rather than being skipped. The module stands at 389 lines, so further phrase
+behaviour should be extracted into a sibling module rather than appended.
+
 The Python implementation accepted in
 [Weaver pull request 190](https://github.com/leynos/weaver/pull/190) is the
 minimum quality baseline. Subsequent implementation should preserve its typed

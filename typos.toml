@@ -23,6 +23,7 @@ extend-exclude = [
     "target",
     "typos.local.toml",
     "typos.toml",
+    "typos_config_builder/data/typos-oxendict-base.toml",
     "uv.lock",
     "yarn.lock",
 ]

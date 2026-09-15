@@ -114,6 +114,7 @@ markdownlint: $(MDLINT) ## Lint Markdown files and spelling
 spelling: ## Enforce en-GB-oxendict spelling
 	$(UV) run typos-config-builder --repository .
 	$(MD_FILES_FIND) | xargs -0 $(TYPOS) --config typos.toml --force-exclude
+	$(UV) run typos-config-builder check-phrases --repository .
 
 nixie: ## Validate Mermaid diagrams
 	$(call ensure_tool,$(NIXIE))

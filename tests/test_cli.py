@@ -6,6 +6,7 @@ import typing as typ
 from unittest import mock
 
 import pytest
+from test_phrases import CORRECTION, PROHIBITED, build_repository, cache_text
 
 from typos_config_builder import cli
 from typos_config_builder.cache import NetworkUnavailableError
@@ -82,4 +83,62 @@ def test_cli_translates_expected_builder_failures(
     captured = capsys.readouterr()
     assert error.value.code == 1
     assert captured.err.strip() == f"error: {failure}"
+    assert "Traceback" not in captured.err
+
+
+def test_check_phrases_reports_findings_and_exits_two(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Findings are printed as locations and the command exits two."""
+    repository = build_repository(
+        tmp_path,
+        {
+            ".typos-oxendict-base.toml": cache_text(),
+            "README.md": f"Prefer {PROHIBITED}.\n",
+        },
+    )
+
+    with pytest.raises(SystemExit) as exit_status:
+        app(["check-phrases", "--repository", str(repository)])
+
+    captured = capsys.readouterr()
+    assert exit_status.value.code == 2
+    assert captured.out == f"README.md:1:8: {PROHIBITED} -> {CORRECTION}\n"
+    assert not captured.err
+
+
+def test_check_phrases_exits_zero_without_findings(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A clean repository produces no output and a successful exit."""
+    repository = build_repository(
+        tmp_path,
+        {
+            ".typos-oxendict-base.toml": cache_text(),
+            "README.md": "Ordinary prose only.\n",
+        },
+    )
+
+    with pytest.raises(SystemExit) as exit_status:
+        app(["check-phrases", "--repository", str(repository)])
+
+    captured = capsys.readouterr()
+    assert exit_status.value.code == 0
+    assert not captured.out
+    assert not captured.err
+
+
+def test_check_phrases_reports_a_missing_cache(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A repository without a cache exits one with a concise diagnostic."""
+    repository = build_repository(tmp_path, {"README.md": "Nothing to see.\n"})
+
+    with pytest.raises(SystemExit) as exit_status:
+        app(["check-phrases", "--repository", str(repository)])
+
+    captured = capsys.readouterr()
+    assert exit_status.value.code == 1
+    assert captured.err.startswith("error: ")
+    assert "typos-config-builder" in captured.err
     assert "Traceback" not in captured.err

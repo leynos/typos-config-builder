@@ -117,6 +117,55 @@ shared dictionary changes. A continuous-integration gate should therefore run
 the builder in write mode and then run Typos against the regenerated
 configuration, rather than failing the build on expected drift.
 
+## Check phrase corrections
+
+Typos tokenizes on punctuation, so it can never enforce a hyphenated phrase.
+The shared dictionary carries those phrases under `[phrases.corrections]`, and
+`check-phrases` applies them to a repository's tracked text:
+
+```bash
+uvx --from "git+https://github.com/leynos/typos-config-builder.git@FULL_COMMIT_SHA" \
+  typos-config-builder check-phrases --repository .
+```
+
+The command reads `.typos-oxendict-base.toml`, merges `typos.local.toml` when
+it is present, and scans every tracked file except the policy documents
+themselves. A finding is printed as a location, the phrase as written, and the
+prescribed replacement:
+
+```plaintext
+docs/users-guide.md:42:15: some-phrase -> somephrase
+```
+
+A phrase matches case-insensitively and only when neither neighbouring
+character is a word character or a hyphen, so a longer compound is never
+reported. Text matched by a shared or local ignore expression is blanked before
+scanning, with every line and column preserved, so a finding's location is the
+location in the original file. Overlapping ignored spans are marked against the
+original text and blanked together, so masking one span never exposes another.
+
+File exclusions are applied with gitignore semantics over the policy's
+normalized order. Generation sorts every policy list, so a re-inclusion such as
+`!README.md` is ordered before the `*.md` it was written to qualify and has no
+effect. Express exclusions without relying on re-inclusion.
+
+The check fails closed. A tracked file that cannot be read, or that is not
+valid UTF-8, is an error rather than a silent skip, because a skipped file is
+exactly the one most likely to have drifted. Tracked symlinks are skipped so
+the scan cannot follow a link out of the repository.
+
+Exit codes are:
+
+| Exit code | Meaning |
+| --- | --- |
+| 0 | No prohibited phrase was found. |
+| 1 | Policy could not be loaded, or tracked text could not be scanned. |
+| 2 | At least one prohibited phrase was found. |
+
+Exit code 1 prints a single `error: ...` line on standard error, never a
+traceback. A missing `.typos-oxendict-base.toml` names the builder invocation
+that creates it.
+
 ## Builder workflow
 
 The CLI performs a small, ordered workflow:
@@ -134,11 +183,12 @@ temporarily unavailable. A run that has no valid cache and cannot reach the
 authority falls back to the bundled snapshot, so shared policy can always be
 established.
 
-The builder only generates and checks configuration. The consumer remains
-responsible for invoking its pinned Typos binary after the configuration check.
-Typos tokenizes hyphenated phrases as separate words, so entries under
-`[phrases.corrections]` remain shared policy metadata for the consumer's phrase
-gate rather than being rendered as ineffective `extend-words` entries.
+The builder generates and checks configuration, and enforces the shared
+phrase corrections through `check-phrases`. The consumer remains responsible
+for invoking its pinned Typos binary after the configuration check. Entries
+under `[phrases.corrections]` are never rendered, because Typos tokenizes
+hyphenated phrases as separate words and would silently ignore them; they are
+applied by `check-phrases` instead.
 
 ## Deliberate limits
 
@@ -147,6 +197,7 @@ The package does not:
 - discover or crawl the code estate;
 - harvest words or infer spelling policy from repository contents;
 - execute Typos or interpret its findings;
+- check spelling of anything other than the shared phrase corrections;
 - install or orchestrate Nixie or Merman CLI;
 - provide a general-purpose policy or configuration framework.
 

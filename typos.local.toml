@@ -19,4 +19,7 @@ ignore = [
 ]
 
 [files]
-exclude = []
+# The packaged snapshot is a policy document: it lists the prohibited
+# phrases themselves, so scanning it would report shared policy as a
+# finding. Consumers never carry this file.
+exclude = ["typos_config_builder/data/typos-oxendict-base.toml"]
