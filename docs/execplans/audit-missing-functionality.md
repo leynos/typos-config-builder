@@ -138,6 +138,11 @@ R1 to R14 are the requirement identifiers used below.
   branch; CodeRabbit review queued via comenq. PR
   leynos/agent-helper-scripts#152 is green on CI at `daa2356` with a fresh
   review queued (7956e7ab).
+  (2026-09-15 17:50Z) First review round on #69 (3 Codex, 17 CodeRabbit
+  findings) answered in `3008a92`: 17 fixed, 3 skipped as suite-wide
+  style (bare asserts, NumPy sections on test helpers) with reasons on
+  the threads; the dependency audit is fixed by pinning pip in the dev
+  group.
 - [ ] EP-M7 agent-helper-scripts: style-guide patterns and docs pointing
   at the builder. (2026-09-14 22:35Z) PR leynos/agent-helper-scripts#152
   opened from worktree `feature/typos-shared-patterns`; CodeRabbit review
