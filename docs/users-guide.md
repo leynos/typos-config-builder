@@ -268,9 +268,11 @@ its 2026-09-14 amendment.
 
 ## Migrating an existing consumer
 
-A repository that already carries a vendored generator, a phrase-check
-script and test, and a Makefile block naming a Typos version and a builder
-commit can replace all of it with the `gate` command:
+See [the migration guide for 0.1.0](migration-guide-0-1-0.md) for the full
+steps and behaviour changes. In short, a repository that already carries a
+vendored generator, a phrase-check script and test, and a Makefile block
+naming a Typos version and a builder commit can replace all of it with the
+`gate` command:
 
 1. Delete the vendored generator script, the vendored phrase-check script,
    and their tests.
