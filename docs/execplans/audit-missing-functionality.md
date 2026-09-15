@@ -136,7 +136,7 @@ R1 to R14 are the requirement identifiers used below.
   gate: 134 passed. Tag `v0.1.0` follows the builder PR merge.
   (2026-09-15 17:30Z) PR leynos/typos-config-builder#69 opened from this
   branch; CodeRabbit review queued via comenq. PR
-  leynos/agent-helper-scripts#152 is green on CI at daa2356 with a fresh
+  leynos/agent-helper-scripts#152 is green on CI at `daa2356` with a fresh
   review queued (7956e7ab).
 - [ ] EP-M7 agent-helper-scripts: style-guide patterns and docs pointing
   at the builder. (2026-09-14 22:35Z) PR leynos/agent-helper-scripts#152
