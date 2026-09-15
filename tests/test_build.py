@@ -200,6 +200,25 @@ def test_undecodable_metadata_is_absent(repository: Path) -> None:
     assert read_metadata(metadata) == {}
 
 
+@pytest.mark.parametrize("payload", [b"not-json", b"[]", b"3", b'"text"'])
+def test_metadata_that_is_not_a_json_object_is_absent(
+    repository: Path,
+    payload: bytes,
+) -> None:
+    """Metadata that is not a JSON object carries no validators.
+
+    Ported from the ``weaver`` fork. The readable control comes first, so a
+    reader that always returned nothing would fail this test.
+    """
+    metadata = repository / METADATA_NAME
+    metadata.write_bytes(b'{"source": "control"}')
+    assert read_metadata(metadata) == {"source": "control"}
+
+    metadata.write_bytes(payload)
+
+    assert read_metadata(metadata) == {}
+
+
 @pytest.mark.parametrize("pattern", ["**/**", "**/*.*"])
 def test_broad_file_glob_equivalents_are_rejected(pattern: str) -> None:
     """Equivalent all-file globs cannot disable repository spelling checks."""

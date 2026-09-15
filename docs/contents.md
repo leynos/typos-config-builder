@@ -5,8 +5,9 @@ documentation set.
 
 ## Project guides
 
-- [User guide](users-guide.md) explains exact-version invocation, consumer
-  files, cache refresh, generation, and drift checking.
+- [User guide](users-guide.md) explains pinned invocation, the `gate`
+  workflow, consumer files, the overlay, drift checking, and phrase-check
+  building blocks.
 - [Developer guide](developers-guide.md) explains the implementation contract,
   quality baseline, and change discipline.
 - [Repository layout](repository-layout.md) maps the package, tests,

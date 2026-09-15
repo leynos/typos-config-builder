@@ -1,19 +1,20 @@
 # typos-config-builder users' guide
 
 This guide is for repositories that generate a tracked `typos.toml` from the
-shared en-GB-oxendict dictionary and a narrow local overlay.
+shared en-GB-oxendict dictionary and a narrow local overlay, and that run the
+`gate` command as their spelling quality gate.
 
 ## Pin the invocation
 
-Until a package registry release exists, pin the complete Git commit identifier
-at the consumer boundary:
+Until a package registry release exists, pin the complete Git tag or commit
+identifier at the consumer boundary:
 
 ```bash
-uvx --from "git+https://github.com/leynos/typos-config-builder.git@FULL_COMMIT_SHA" \
-  typos-config-builder --check
+uvx --from "git+https://github.com/leynos/typos-config-builder.git@v0.1.0" \
+  typos-config-builder gate
 ```
 
-Replace `FULL_COMMIT_SHA` with the selected commit. The exact revision makes
+Replace `v0.1.0` with the selected tag or commit. The exact revision makes
 policy changes reviewable. Consumers should not invoke an unpinned branch or
 latest revision.
 
@@ -21,7 +22,7 @@ After registry publication, the equivalent form pins the released package
 version:
 
 ```bash
-uvx --from typos-config-builder==X.Y.Z typos-config-builder --check
+uvx --from typos-config-builder==X.Y.Z typos-config-builder gate
 ```
 
 ## Run the whole gate
@@ -161,14 +162,17 @@ cached policy.
 
 ## Check for drift
 
-Pass `--check` in a quality gate. The command refreshes the cache, merges the
-local overlay, and compares the deterministic rendering with tracked
-`typos.toml`. It exits non-zero on drift without rewriting the tracked file.
+`--check` refreshes the cache, merges the local overlay, and compares the
+deterministic rendering with tracked `typos.toml`, exiting non-zero on drift
+without rewriting the tracked file. It is a local inspection tool, useful
+when reviewing whether an overlay change alters the rendered output.
 
 Because the authority is live, a tracked `typos.toml` drifts whenever the
-shared dictionary changes. A continuous-integration gate should therefore run
-the builder in write mode and then run Typos against the regenerated
-configuration, rather than failing the build on expected drift.
+shared dictionary changes, so continuous integration (CI) must not run
+`--check` against a tracked `typos.toml`: that would fail every consumer's
+build on every shared dictionary edit. Use `gate`, which always writes the
+current rendering before checking it with Typos and the phrase check, for
+the CI-facing spelling gate.
 
 ## Check phrase corrections
 
@@ -244,14 +248,45 @@ them; the gate applies them itself.
 
 ## Deliberate limits
 
-The package does not:
+The package runs the pinned Typos binary and enforces the shared phrase
+corrections, but it still does not:
 
 - discover or crawl the code estate;
-- harvest words or infer spelling policy from repository contents;
-- interpret, summarize, or rewrite the findings Typos reports;
-- check spelling itself, beyond the shared phrase corrections Typos cannot
-  express;
-- install or orchestrate Nixie or Merman CLI;
+- harvest words, or decide what new entries the shared dictionary accepts;
+- interpret, summarize, or rewrite the findings Typos reports, beyond
+  relaying them;
+- install or orchestrate Nixie or Merman CLI; or
 - provide a general-purpose policy or configuration framework.
 
-These limits keep the package focused on reproducible `typos.toml` generation.
+These limits keep the package focused on applying the shared spelling policy
+consistently, rather than becoming a general estate-tooling platform. See
+[ADR 0001](adrs/0001-keep-the-builder-focused.md) for the full boundary and
+its 2026-09-14 amendment.
+
+## Migrating an existing consumer
+
+A repository that already carries a vendored generator, a phrase-check
+script and test, and a Makefile block naming a Typos version and a builder
+commit can replace all of it with the `gate` command:
+
+1. Delete the vendored generator script, the vendored phrase-check script,
+   and their tests.
+2. Drop the `TYPOS_VERSION`, `PATHSPEC_VERSION`, and builder-commit Makefile
+   variables, and any helper targets that existed only to invoke them (for
+   example a `spelling-helper-test` target).
+3. Replace the spelling Makefile target with a single call to `gate`,
+   pinned to `v0.1.0`:
+
+   ```bash
+   uvx --from "git+https://github.com/leynos/typos-config-builder.git@v0.1.0" \
+     typos-config-builder gate
+   ```
+
+4. Add the two `.gitignore` lines for the untracked cache, if they are not
+   already present.
+5. Regenerate `typos.toml` once by running the command above, and review the
+   diff.
+6. Remove any local overlay entries added only to protect the Azure or
+   GitHub-flavoured Markdown (GFM) style-guide product names once the shared
+   dictionary carries them; check the regenerated `typos.toml` for the
+   corresponding entries before deleting the overlay lines.

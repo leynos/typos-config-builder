@@ -124,7 +124,16 @@ R1 to R14 are the requirement identifiers used below.
   shared CLI error translation, the `typos==1.48.0` dependency,
   `tests/test_gate.py`, two command-boundary tests, the users' guide gate
   section, and this repository's one-line `spelling` target.
-- [ ] EP-M6 port fork tests worth keeping; docs and ADR amendment; tag.
+- [x] (2026-09-15 17:20Z) EP-M6 fork tests ported, docs and ADR amended.
+  Ported 17 tests from weaver, ortho-config and mriya into
+  `tests/test_remote.py`, `tests/test_policy.py` and `tests/test_build.py`
+  (HTTPS-only source and redirects, 304 digest binding, invalid body keeps
+  cache, ETag precedence, date fallback, non-object metadata, an
+  11-row malformed-policy matrix, sparse-overlay and merge semantics).
+  Not ported: two pre-digest-binding tests, mriya's silent-skip race test
+  (builder fails closed), fork scaffolding tests, and ortho-config's
+  10-row broad-exception matrix, which remains a small open gap. Full
+  gate: 134 passed. Tag `v0.1.0` follows the builder PR merge.
 - [ ] EP-M7 agent-helper-scripts: style-guide patterns and docs pointing
   at the builder. (2026-09-14 22:35Z) PR leynos/agent-helper-scripts#152
   opened from worktree `feature/typos-shared-patterns`; CodeRabbit review
@@ -789,3 +798,23 @@ Runtime dependencies: `cyclopts`, `pathspec`, `typos`.
   `.gitignore` lines, the `--scope` table, and the exit codes; its
   "Deliberate limits" list no longer claims the package never executes Typos,
   since that is now its job.
+- 2026-09-15 (EP-M6 documentation half): ADR 0001's amendment section was
+  rewritten into one coherent record of the four 2026-09-14 owner decisions
+  (live authority with bootstrap fallback, Typos execution and phrase
+  enforcement in scope, the remaining exclusions, and the three-item
+  consumer footprint), with its Status line changed to "Accepted,
+  2026-07-14; amended 2026-09-14". The design document's pipeline diagram
+  and Boundaries section now name the `gate` pipeline through Typos and the
+  phrase check, a new numbered "Commands" section documents the three
+  commands and `--scope`, and one sentence records the sorted-list
+  gitignore re-inclusion limitation as an open owner question. The users'
+  guide now opens with the pinned `gate` invocation, keeps the existing
+  repository-files, overlay, default-command, and `check-phrases` sections
+  in the same order as building blocks, rewrites "Check for drift" to warn
+  against running `--check` in CI, updates "Deliberate limits" to the
+  amended exclusion list, and adds a "Migrating an existing consumer"
+  subsection with the six-step recipe. `README.md`'s summary paragraph and
+  invocation now describe and use the pinned `gate` form. `pyproject.toml`
+  already declared version `0.1.0`, so it was left unchanged. Test porting
+  from the forks and the `v0.1.0` tag remain outstanding for the rest of
+  EP-M6.

@@ -3,11 +3,20 @@
 This reference identifies the small set of paths that define the builder.
 
 - The Python 3.14 library and Cyclopts CLI live in `typos_config_builder/`.
+- `typos_config_builder/remote.py` owns the HTTPS refresh path: transport
+  safety, conditional requests, the bounded response read, and the
+  stale-cache and bootstrap fallbacks. `typos_config_builder/http.py` owns
+  the local and offline paths and the `refresh` entry point, and imports
+  `remote` in that one direction only.
 - `typos_config_builder/phrases.py` enforces the shared phrase corrections
   that Typos cannot express, and is the only module that shells out to Git.
 - `typos_config_builder/gate.py` runs the whole gate: generation, the pinned
-  Typos binary, and the phrase check.
-- Focused unit and command-boundary tests are kept in `tests/`.
+  Typos binary, and the phrase check. It is the package's only other module
+  that starts a subprocess, and the process it starts is Typos.
+- Focused unit and command-boundary tests are kept in `tests/`, one module
+  per package module (`test_build.py`, `test_http.py`, `test_patterns.py`,
+  `test_phrases.py`, `test_gate.py`, `test_cli.py`), plus shared fixtures in
+  `conftest.py`.
 - Maintainer guidance, the user contract, design, and decision record belong in
   `docs/`.
 - `pyproject.toml` declares the package, Python requirement, dependencies, and

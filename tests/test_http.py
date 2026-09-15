@@ -9,37 +9,17 @@ import urllib.error
 from unittest import mock
 
 import pytest
-from conftest import authority_text
+from conftest import AUTHORITY_SOURCE, authority_text, fake_response, seed_cache
 
 from typos_config_builder import cache, policy, remote
 
-SOURCE = "https://example.invalid/authority.toml"
+SOURCE = AUTHORITY_SOURCE
+OTHER_SOURCE = "https://other.example.invalid/authority.toml"
 ETAG = '"shared-authority-etag"'
 UNREACHABLE = "authority is unreachable"
 
 if typ.TYPE_CHECKING:
     import pathlib
-
-
-def _seed_cache(
-    repository: pathlib.Path,
-    *,
-    saved_digest: str | None = None,
-    etag: str | None = None,
-) -> tuple[pathlib.Path, pathlib.Path]:
-    """Write a valid cache and its source-bound metadata sidecar."""
-    content = authority_text().encode()
-    cache_path = repository / "cache.toml"
-    metadata = repository / "cache.json"
-    cache_path.write_bytes(content)
-    saved: dict[str, object] = {
-        "source": SOURCE,
-        "sha256": cache.digest(content) if saved_digest is None else saved_digest,
-    }
-    if etag is not None:
-        saved["etag"] = etag
-    cache.write_metadata(metadata, saved)
-    return cache_path, metadata
 
 
 def _seed_remote_cache(
@@ -49,7 +29,7 @@ def _seed_remote_cache(
     saved_digest: str | None = None,
 ) -> tuple[pathlib.Path, cache.RefreshOptions]:
     """Create a valid remote cache and its source-bound metadata."""
-    cache_path, metadata = _seed_cache(repository, saved_digest=saved_digest)
+    cache_path, metadata = seed_cache(repository, saved_digest=saved_digest)
     return cache_path, cache.RefreshOptions(metadata=metadata, opener=opener)
 
 
@@ -58,15 +38,6 @@ def _bundled_snapshot(repository: pathlib.Path) -> pathlib.Path:
     bundle = repository / "bundled-authority.toml"
     bundle.write_text(authority_text(stem="bundled"), encoding="utf-8")
     return bundle
-
-
-def _response(content: bytes, *, etag: str | None = None) -> mock.MagicMock:
-    """Return a context-manager response with a fixed body and headers."""
-    response = mock.MagicMock()
-    response.__enter__.return_value = response
-    response.read.return_value = content
-    response.headers = {} if etag is None else {"ETag": etag}
-    return response
 
 
 @pytest.mark.parametrize("status", [500, 502, 503, 504])
@@ -121,7 +92,7 @@ def test_offline_reuse_rejects_cache_from_another_source(
 
     with pytest.raises(FileNotFoundError, match="cached shared dictionary"):
         cache.refresh(
-            "https://other.example.invalid/authority.toml",
+            OTHER_SOURCE,
             cache_path,
             policy.validate_bytes,
             offline,
@@ -212,12 +183,12 @@ def test_bootstrap_is_used_only_without_a_source_matching_cache(
     bundle = _bundled_snapshot(repository)
     remote = authority_text(stem="remote").encode()
     opener = (
-        mock.Mock(return_value=_response(remote, etag=ETAG))
+        mock.Mock(return_value=fake_response(remote, etag=ETAG))
         if is_reachable
         else mock.Mock(side_effect=OSError(UNREACHABLE))
     )
     if has_cache:
-        cache_path, metadata = _seed_cache(repository, etag=ETAG)
+        cache_path, metadata = seed_cache(repository, etag=ETAG)
     else:
         cache_path = repository / "cache.toml"
         metadata = repository / "cache.json"
