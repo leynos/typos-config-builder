@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 import pathlib
+import shutil
 import subprocess  # noqa: S404
 import typing as typ
 
 import pytest
-from conftest import authority_text
+from conftest import (
+    CORRECTION,
+    PROHIBITED,
+    build_repository,
+    cache_text,
+)
 from hypothesis import event, given
 from hypothesis import strategies as st
 
@@ -16,31 +22,15 @@ from typos_config_builder import phrases
 if typ.TYPE_CHECKING:
     import collections.abc as cabc
 
-# The prohibited phrase is spliced so this file never contains it literally.
-PROHIBITED = "hand" + "-written"
+# The prohibited phrase's title-cased variant is spliced so this file never
+# contains it literally.
 TITLE_PROHIBITED = "Hand" + "-written"
-CORRECTION = "handwritten"
 INLINE_CODE = r"`[^`\n]+`"
 FENCED_BLOCK = "(?s)```.*?```"
 ANGLE_SPAN = r"<[^>\n]+>"
-
-
-def cache_text(
-    *,
-    corrections: cabc.Sequence[tuple[str, str]] = ((PROHIBITED, CORRECTION),),
-    ignore: cabc.Sequence[str] = (),
-    exclude: cabc.Sequence[str] = (".git",),
-) -> str:
-    """Return a complete authority document carrying phrase corrections."""
-    entries = "".join(
-        f'"{phrase}" = "{correction}"\n' for phrase, correction in corrections
-    )
-    excludes = ", ".join(f'"{item}"' for item in exclude)
-    return (
-        authority_text(ignore=ignore)
-        .replace("[phrases.corrections]\n", f"[phrases.corrections]\n{entries}")
-        .replace('exclude = [".git"]', f"exclude = [{excludes}]")
-    )
+# Placeholder commit identifier for a submodule gitlink. Git records a
+# gitlink without resolving the object, so the commit need not exist.
+GITLINK_COMMIT = "0" * 39 + "1"
 
 
 def overlay_text(*, corrections: cabc.Sequence[tuple[str, str]]) -> str:
@@ -59,21 +49,6 @@ def _git(repository: pathlib.Path, *arguments: str) -> None:
         capture_output=True,
         stdin=subprocess.DEVNULL,
     )
-
-
-def build_repository(
-    root: pathlib.Path, files: cabc.Mapping[str, str], *, name: str = "repository"
-) -> pathlib.Path:
-    """Create and stage a tracked-file fixture repository."""
-    repository = root / name
-    repository.mkdir(parents=True, exist_ok=True)
-    for relative, content in files.items():
-        target = repository / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content, encoding="utf-8")
-    _git(repository, "init", "--quiet")
-    _git(repository, "add", "-A")
-    return repository
 
 
 def bare_policy(
@@ -219,6 +194,28 @@ def test_tracked_symlinks_are_skipped(tmp_path: pathlib.Path) -> None:
     )
 
 
+def test_tracked_path_behind_a_symlinked_parent_is_skipped(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A symlinked parent directory cannot smuggle outside text into the scan."""
+    repository = build_repository(
+        tmp_path,
+        {
+            ".typos-oxendict-base.toml": cache_text(),
+            "docs/guide.md": "Ordinary prose only.\n",
+        },
+    )
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "guide.md").write_text(f"{PROHIBITED}\n", encoding="utf-8")
+    shutil.rmtree(repository / "docs")
+    (repository / "docs").symlink_to(outside, target_is_directory=True)
+
+    assert not phrases.find_phrases(repository, phrases.load_policy(repository)), (
+        "the scan read a file outside the repository through a symlinked parent"
+    )
+
+
 def test_policy_documents_are_not_scanned(tmp_path: pathlib.Path) -> None:
     """The cache, overlay, metadata, and generated config are skipped."""
     repository = build_repository(
@@ -251,6 +248,35 @@ def test_tracked_file_removed_after_enumeration_fails_closed(
 
     assert error.value.path == pathlib.Path("README.md")
     assert isinstance(error.value.__cause__, FileNotFoundError)
+
+
+def test_tracked_submodule_directory_is_skipped(tmp_path: pathlib.Path) -> None:
+    """A tracked submodule gitlink is skipped instead of failing the scan.
+
+    The gitlink is recorded with ``git update-index --cacheinfo`` and an empty
+    directory is created in its place. That route avoids committing an inner
+    repository and relaxing Git's file-protocol policy, while reproducing what
+    ``git ls-files`` reports for a checked-out submodule.
+    """
+    repository = build_repository(
+        tmp_path,
+        {".typos-oxendict-base.toml": cache_text(), "README.md": "Ordinary prose.\n"},
+    )
+    _git(
+        repository,
+        "update-index",
+        "--add",
+        "--cacheinfo",
+        f"160000,{GITLINK_COMMIT},sub",
+    )
+    (repository / "sub").mkdir()
+    (repository / "sub" / "NOTES.md").write_text(
+        f"Prefer {PROHIBITED}.\n", encoding="utf-8"
+    )
+
+    assert not phrases.find_phrases(repository, phrases.load_policy(repository)), (
+        "the submodule's untracked content was scanned"
+    )
 
 
 def test_undecodable_tracked_file_fails_closed(tmp_path: pathlib.Path) -> None:

@@ -1,68 +1,24 @@
-"""Contracts for the combined build, Typos, and phrase-correction gate."""
+"""Contracts for the gate's staging and its command-line boundary.
+
+The Typos invocation itself is contracted in
+:mod:`tests.test_gate_typos`; this module covers scope selection, the order
+of the gate's stages, and how failures surface through the command line.
+"""
 
 from __future__ import annotations
 
-import dataclasses as dc
+import os
 import pathlib
-import subprocess  # noqa: S404
-import typing as typ
 
 import pytest
-from test_phrases import CORRECTION, PROHIBITED, build_repository, cache_text
+from conftest import CORRECTION, PROHIBITED, FakeRunner, build_repository, cache_text
 
 from typos_config_builder import cli, gate
-
-if typ.TYPE_CHECKING:
-    import collections.abc as cabc
 
 # Spliced so this file never contains a plain-British form that the
 # repository's own gate would report.
 PLAIN_BRITISH = "organ" + "ise"
 OXFORD = "organ" + "ize"
-
-
-@dc.dataclass(frozen=True, slots=True)
-class RunnerCall:
-    """Record one invocation of the injected Typos runner.
-
-    Attributes
-    ----------
-    argv
-        Complete command line the gate assembled.
-    cwd
-        Working directory the gate selected.
-    has_config
-        Whether generated configuration existed when the call was made.
-    """
-
-    argv: tuple[str, ...]
-    cwd: pathlib.Path
-    has_config: bool
-
-
-class FakeRunner:
-    """Record Typos invocations and replay configured exit codes."""
-
-    def __init__(self, *returncodes: int) -> None:
-        """Queue exit codes, repeating the last once the queue is exhausted."""
-        self._returncodes = returncodes or (0,)
-        self.calls: list[RunnerCall] = []
-
-    def __call__(
-        self,
-        args: cabc.Sequence[str],
-        /,
-        *,
-        cwd: pathlib.Path,
-        check: bool,
-        stdin: int,
-    ) -> subprocess.CompletedProcess[bytes]:
-        """Record one invocation and return its configured completion."""
-        assert not check, "the gate must inspect exit codes rather than raise"
-        assert stdin == subprocess.DEVNULL, "Typos must not inherit standard input"
-        index = min(len(self.calls), len(self._returncodes) - 1)
-        self.calls.append(RunnerCall(tuple(args), cwd, (cwd / "typos.toml").is_file()))
-        return subprocess.CompletedProcess(list(args), self._returncodes[index])
 
 
 @pytest.fixture
@@ -71,11 +27,6 @@ def authority(tmp_path: pathlib.Path) -> pathlib.Path:
     path = tmp_path / "authority.toml"
     path.write_text(cache_text(), encoding="utf-8")
     return path
-
-
-def fake_paths(count: int) -> tuple[pathlib.Path, ...]:
-    """Return distinct repository-relative Markdown paths."""
-    return tuple(pathlib.Path(f"doc-{index}.md") for index in range(count))
 
 
 def test_select_files_keeps_markdown_case_insensitively() -> None:
@@ -98,64 +49,6 @@ def test_scope_all_includes_non_markdown() -> None:
     tracked = (pathlib.Path("README.md"), pathlib.Path("notes.txt"))
 
     assert gate.select_files(tracked, "all") == tracked
-
-
-def test_run_typos_chunks_long_file_lists(tmp_path: pathlib.Path) -> None:
-    """A long file list is split so no command line grows without bound."""
-    runner = FakeRunner(0)
-
-    exit_code = gate.run_typos(tmp_path, fake_paths(1200), hidden=False, runner=runner)
-
-    assert exit_code == 0
-    assert len(runner.calls) == 3
-    lengths = [
-        len([argument for argument in call.argv if argument.startswith("doc-")])
-        for call in runner.calls
-    ]
-    assert lengths == [500, 500, 200]
-
-
-def test_run_typos_skips_invocation_without_files(tmp_path: pathlib.Path) -> None:
-    """An empty selection succeeds without starting Typos at all."""
-    runner = FakeRunner(2)
-
-    exit_code = gate.run_typos(tmp_path, (), hidden=False, runner=runner)
-
-    assert exit_code == 0
-    assert not runner.calls, "Typos ran with nothing to check"
-
-
-def test_run_typos_returns_the_worst_exit_code(tmp_path: pathlib.Path) -> None:
-    """One failing chunk fails the whole Typos stage."""
-    runner = FakeRunner(0, 2, 0)
-
-    exit_code = gate.run_typos(tmp_path, fake_paths(1200), hidden=False, runner=runner)
-
-    assert exit_code == 2
-
-
-def test_run_typos_passes_the_generated_configuration(
-    tmp_path: pathlib.Path,
-) -> None:
-    """Typos is pointed at the generated configuration and honours exclusions."""
-    runner = FakeRunner(0)
-
-    gate.run_typos(tmp_path, fake_paths(1), hidden=False, runner=runner)
-
-    argv = runner.calls[0].argv
-    assert argv[0].endswith(("typos", "typos.exe"))
-    assert argv[1:4] == ("--config", "typos.toml", "--force-exclude")
-    assert "--hidden" not in argv
-    assert runner.calls[0].cwd == tmp_path
-
-
-def test_scope_all_adds_the_hidden_flag(tmp_path: pathlib.Path) -> None:
-    """Checking every tracked path includes dotted directories."""
-    runner = FakeRunner(0)
-
-    gate.run_typos(tmp_path, fake_paths(1), hidden=True, runner=runner)
-
-    assert "--hidden" in runner.calls[0].argv
 
 
 def test_gate_builds_configuration_before_running_typos(
@@ -258,6 +151,40 @@ def test_missing_typos_binary_exits_one_through_the_cli(
     captured = capsys.readouterr()
     assert exit_status.value.code == 1
     assert captured.err.strip() == "error: typos was not found"
+    assert "Traceback" not in captured.err
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the stub relies on POSIX signals")
+def test_signalled_typos_exits_one_through_the_cli(
+    tmp_path: pathlib.Path,
+    authority: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A Typos binary killed by a signal is an error, never a clean gate."""
+    repository = build_repository(tmp_path, {"README.md": "Ordinary prose only.\n"})
+    stub = tmp_path / "typos-stub"
+    stub.write_text("#!/bin/sh\nkill -9 $$\n", encoding="utf-8")
+    stub.chmod(0o755)
+
+    def signalled() -> pathlib.Path:
+        """Stand in for a Typos binary that is killed while running."""
+        return stub
+
+    monkeypatch.setattr(gate, "typos_executable", signalled)
+
+    with pytest.raises(SystemExit) as exit_status:
+        cli.app([
+            "gate",
+            "--repository",
+            str(repository),
+            "--source",
+            str(authority),
+        ])
+
+    captured = capsys.readouterr()
+    assert exit_status.value.code == 1
+    assert "signal 9" in captured.err
     assert "Traceback" not in captured.err
 
 

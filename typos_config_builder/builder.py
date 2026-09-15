@@ -115,7 +115,9 @@ def build(
         Local path or HTTPS authority. The live shared dictionary at
         ``DEFAULT_SOURCE`` is used by default.
     offline
-        Require an already-valid local cache when true.
+        Forbid refresh from the authority. With the default source and no
+        valid cache, the bundled snapshot is used instead; with an explicit
+        source, a valid cache is required.
     check
         Report drift without replacing the generated configuration when true.
 
@@ -126,10 +128,16 @@ def build(
 
     Raises
     ------
+    cache.InsecureSourceError
+        If an explicit source, or a redirect it serves, is not HTTPS.
+    cache.NetworkUnavailableError
+        If an explicit HTTPS source cannot be reached and no valid cache can
+        serve in its place.
     ConfigDriftError
         If check mode finds a missing or stale generated configuration.
     FileNotFoundError
-        If offline mode has no valid cache or a local source is absent.
+        If offline mode is given an explicit source with no valid cache, or
+        a local source is absent.
     ValueError
         If the authority or overlay is invalid or conflicts with policy.
 

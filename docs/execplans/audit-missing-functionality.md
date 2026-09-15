@@ -38,7 +38,7 @@ R1 to R14 are the requirement identifiers used below.
 
 ## Constraints
 
-- Python 3.14 only, as `pyproject.toml` already declares. Unparenthesised
+- Python 3.14 only, as `pyproject.toml` already declares. Unparenthesized
   multi-type `except A, B:` is valid there and is the house style.
 - The authoritative shared dictionary is the current `main` of
   `leynos/agent-helper-scripts`, at
@@ -239,6 +239,27 @@ R1 to R14 are the requirement identifiers used below.
   `http.py` stands at 399 lines, leaving almost no headroom for EP-M3's 429
   status and size cap. EP-M3 should plan to extract the remote-response path
   rather than append to `http.py`.
+- Observation: `run_typos` aggregated chunk exit codes with `max()`, which
+  silently discards a negative return code. A Typos process killed by a signal
+  therefore contributed zero, so a killed run over a repository with no phrase
+  findings reported a clean gate and exit zero.
+  Response: any negative return code is now an operational failure. `run_typos`
+  raises `gate.TyposFailedError` naming the signal. The class derives from
+  `OSError` so `cli.EXPECTED_FAILURES` already translates it into one
+  `error: ...` line and exit one, without widening that tuple.
+  Pinned by `tests/test_gate.py::test_run_typos_rejects_a_signalled_exit` and
+  `::test_signalled_typos_exits_one_through_the_cli`.
+- Observation: `git ls-files -z` lists submodule gitlinks, which are
+  directories on disk rather than symlinks. `find_phrases` skipped only
+  symlinks, so `read_text` raised `IsADirectoryError` and the scan failed
+  closed on every consumer repository carrying a submodule.
+  Response: `find_phrases` skips a tracked path that is a directory alongside
+  the existing symlink skip. A vanished tracked file is neither, so the
+  fail-closed contract for a removed file is unchanged.
+  Pinned by the `test_tracked_submodule_directory_is_skipped` case in
+  `tests/test_phrases.py`, which records the gitlink with
+  `git update-index --cacheinfo` rather than adding a real submodule, avoiding
+  an inner commit and relaxed file-protocol settings.
 
 ## Decision log
 

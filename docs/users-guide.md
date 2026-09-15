@@ -49,7 +49,7 @@ The two `.gitignore` lines keep the untracked cache out of version control:
 ```
 
 `--repository PATH` gates another repository, `--source SOURCE` selects an
-alternative authority, and `--offline` requires an already-valid cache.
+alternative authority, and `--offline` forbids refresh from the authority.
 `--scope` selects what Typos is given:
 
 | Scope | Files checked |
@@ -128,8 +128,10 @@ The command uses the current directory as the consumer repository. Pass
 `--repository PATH` to select another repository. `--source SOURCE` selects an
 explicit alternative authority.
 
-Use `--offline` to prohibit refresh from the configured authority and require a
-valid existing cache.
+Use `--offline` to forbid refresh from the configured authority. With the
+default source and no valid cache, the bundled snapshot bootstraps the
+cache instead (see Shared dictionary authority, below); with an explicit
+`--source`, `--offline` requires an already-valid cache.
 
 ## Shared dictionary authority
 
@@ -195,7 +197,7 @@ docs/users-guide.md:42:15: some-phrase -> somephrase
 ```
 
 A phrase matches case-insensitively and only when neither neighbouring
-character is a word character or a hyphen, so a longer compound is never
+character is a word character nor a hyphen, so a longer compound is never
 reported. Text matched by a shared or local ignore expression is blanked before
 scanning, with every line and column preserved, so a finding's location is the
 location in the original file. Overlapping ignored spans are marked against the
@@ -236,9 +238,10 @@ The CLI performs a small, ordered workflow:
    when `--check` is set.
 
 The refresh operation preserves a valid cache when the configured authority is
-temporarily unavailable. A run that has no valid cache and cannot reach the
-authority falls back to the bundled snapshot, so shared policy can always be
-established.
+temporarily unavailable. With the default source, a run that has no valid
+cache and cannot reach the authority falls back to the bundled snapshot, so
+shared policy can always be established; an explicit `--source` has no such
+fallback and fails instead.
 
 The `gate` command performs the same workflow in write mode and then runs the
 pinned Typos binary and the phrase check, so a consumer needs no separate Typos

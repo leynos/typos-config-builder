@@ -6,7 +6,7 @@ import typing as typ
 from unittest import mock
 
 import pytest
-from test_phrases import CORRECTION, PROHIBITED, build_repository, cache_text
+from conftest import CORRECTION, PROHIBITED, build_repository, cache_text
 
 from typos_config_builder import cli
 from typos_config_builder.cache import NetworkUnavailableError

@@ -114,8 +114,15 @@ def log_decision(
 def bootstrap_or_none(
     state: RemoteRequestState,
     context: RefreshContext,
+    *,
+    error_class: str = "network-unavailable",
 ) -> cache_support.RefreshResult | None:
-    """Seed the cache from a configured snapshot, or report none is configured."""
+    """Seed the cache from a configured snapshot, or report none is configured.
+
+    The caller names the class of failure that forced the snapshot, because an
+    offline run never attempted the network and a network failure would
+    misdescribe it in diagnostics.
+    """
     request = context.options.bootstrap_request(state.cache, state.source)
     if request is None:
         return None
@@ -125,7 +132,7 @@ def bootstrap_or_none(
     log_decision(
         "bootstrap",
         "bundled",
-        error_class="network-unavailable",
+        error_class=error_class,
         level=logging.WARNING,
     )
     return result

@@ -104,7 +104,9 @@ def _refresh_offline(
         cache_support.read_metadata(context.options.metadata),
     )
     if not remote.cache_matches_saved_identity(state, context.validate):
-        bootstrapped = remote.bootstrap_or_none(state, context)
+        bootstrapped = remote.bootstrap_or_none(
+            state, context, error_class="offline-no-cache"
+        )
         if bootstrapped is None:
             message = f"no cached shared dictionary at {cache}"
             raise FileNotFoundError(message)

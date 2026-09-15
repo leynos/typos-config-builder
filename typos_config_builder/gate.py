@@ -15,7 +15,6 @@ from __future__ import annotations
 import dataclasses as dc
 import os
 import pathlib
-import shutil
 
 # The gate runs the pinned Typos console script by design. The executable is
 # resolved from the installed environment and its arguments are tracked paths.
@@ -31,9 +30,11 @@ if typ.TYPE_CHECKING:
 #: Scopes a consumer may submit to Typos.
 Scope = typ.Literal["markdown", "all"]
 
-#: Upper bound on paths per Typos invocation, so a large repository cannot
-#: exceed the platform's command-line length limit.
-CHUNK_SIZE = 500
+#: Upper bound on the bytes one Typos command line may occupy. Paths vary
+#: enormously in length, so a byte budget bounds the command where a path count
+#: cannot. The figure sits well inside the smallest limit the supported
+#: platforms impose, leaving room for the environment the process inherits.
+COMMAND_BUDGET_BYTES = 30000
 
 #: Exit code Typos and this gate use to report findings.
 FINDINGS_EXIT = 2
@@ -62,6 +63,12 @@ class TyposRunner(typ.Protocol):
 
 class TyposUnavailableError(RuntimeError):
     """Report that the pinned Typos console script could not be located."""
+
+
+# Derived from OSError so the command line's expected-failure handling already
+# reports it as one concise line rather than a traceback.
+class TyposFailedError(OSError):
+    """Report that a Typos invocation did not run to completion."""
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -179,9 +186,9 @@ def select_files(
 def typos_executable() -> pathlib.Path:
     """Locate the pinned Typos console script for the running environment.
 
-    The script installed beside the running interpreter is preferred, so the
-    version pinned by this package is used even when an unrelated Typos is
-    earlier on the executable search path.
+    Only the script installed beside the running interpreter is accepted, so
+    the version pinned by this package is used and an unrelated Typos on the
+    executable search path can never stand in for it.
 
     Returns
     -------
@@ -202,14 +209,42 @@ def typos_executable() -> pathlib.Path:
     beside_interpreter = pathlib.Path(sys.executable).parent / name
     if beside_interpreter.is_file():
         return beside_interpreter
-    located = shutil.which("typos")
-    if located is not None:
-        return pathlib.Path(located)
+    # A Typos found on PATH is some other installation at some other version,
+    # and this gate's whole purpose is a reproducible pinned check, so an
+    # unpinned binary is worse than no binary at all.
     message = (
         "the pinned typos binary was not found beside "
-        f"{sys.executable} or on PATH; reinstall typos-config-builder"
+        f"{sys.executable}; reinstall typos-config-builder"
     )
     raise TyposUnavailableError(message)
+
+
+def _command_bytes(arguments: cabc.Sequence[str]) -> int:
+    """Return the bytes an argument list occupies, including its separators."""
+    return sum(len(argument.encode()) + 1 for argument in arguments)
+
+
+def _chunks(
+    files: cabc.Sequence[pathlib.Path], fixed_bytes: int
+) -> cabc.Iterator[tuple[pathlib.Path, ...]]:
+    """Group paths into command lines that stay within the byte budget.
+
+    A path too long to share any command line is submitted on its own rather
+    than dropped, because an unchecked tracked file is a silent gap in the
+    gate.
+    """
+    chunk: list[pathlib.Path] = []
+    used = fixed_bytes
+    for path in files:
+        cost = len(str(path).encode()) + 1
+        if chunk and used + cost > COMMAND_BUDGET_BYTES:
+            yield tuple(chunk)
+            chunk = []
+            used = fixed_bytes
+        chunk.append(path)
+        used += cost
+    if chunk:
+        yield tuple(chunk)
 
 
 def run_typos(
@@ -242,6 +277,8 @@ def run_typos(
 
     Raises
     ------
+    TyposFailedError
+        If a Typos invocation is killed by a signal.
     TyposUnavailableError
         If the pinned Typos console script cannot be found.
 
@@ -260,9 +297,11 @@ def run_typos(
     ]
     if hidden:
         command.append("--hidden")
+    # Everything after the separator is a path, so a tracked file whose name
+    # begins with a dash is checked rather than read as an option.
+    command.append("--")
     worst = 0
-    for start in range(0, len(files), CHUNK_SIZE):
-        chunk = files[start : start + CHUNK_SIZE]
+    for chunk in _chunks(files, _command_bytes(command)):
         completed = runner(
             [*command, *(str(path) for path in chunk)],
             cwd=repository,
@@ -272,6 +311,15 @@ def run_typos(
             # for it might; an inherited terminal would wedge the gate.
             stdin=subprocess.DEVNULL,
         )
+        # A negative code means a signal killed Typos before it could report.
+        # Aggregating it with max() would let a killed run look clean, so the
+        # whole stage fails instead.
+        if completed.returncode < 0:
+            message = (
+                f"typos was killed by signal {-completed.returncode} while "
+                f"checking {len(chunk)} tracked files"
+            )
+            raise TyposFailedError(message)
         worst = max(worst, completed.returncode)
     return worst
 
@@ -309,6 +357,8 @@ def gate(
         If ``git`` is absent, or offline mode has no valid cache.
     PhraseScanError
         If a tracked file cannot be read or decoded as UTF-8.
+    TyposFailedError
+        If a Typos invocation is killed by a signal.
     TyposUnavailableError
         If the pinned Typos console script cannot be found.
     subprocess.CalledProcessError

@@ -1,6 +1,19 @@
-"""Shared fixtures and fakes for the focused configuration-builder contracts."""
+"""Shared fixtures and fakes for the builder's tests.
+
+Provides the authority text and cache-seeding helpers, a fake HTTP response
+factory, a tracked-file git repository factory, the recording Typos runner,
+and the prohibited-phrase constants shared across the phrase, gate, and CLI
+contracts. Test modules import from this module rather than from each other.
+"""
 
 import collections.abc as cabc
+import dataclasses as dc
+import json
+import pathlib
+
+# The gate's contracts inspect the command line it assembles for the pinned
+# Typos binary, so the fakes need the same completion type the gate returns.
+import subprocess  # noqa: S404 - only CompletedProcess and DEVNULL are used.
 from pathlib import Path
 from unittest import mock
 
@@ -12,6 +25,59 @@ AuthorityFactory = cabc.Callable[..., Path]
 #: Authority every seeded cache is bound to, in an unresolvable domain so a
 #: leaked request cannot reach a real host.
 AUTHORITY_SOURCE = "https://example.invalid/authority.toml"
+# The prohibited phrase is spliced so this file never contains it literally.
+PROHIBITED = "hand" + "-written"
+CORRECTION = "handwritten"
+
+
+@dc.dataclass(frozen=True, slots=True)
+class RunnerCall:
+    """Record one invocation of the injected Typos runner.
+
+    Attributes
+    ----------
+    argv
+        Complete command line the gate assembled.
+    cwd
+        Working directory the gate selected.
+    has_config
+        Whether generated configuration existed when the call was made.
+    """
+
+    argv: tuple[str, ...]
+    cwd: pathlib.Path
+    has_config: bool
+
+
+class FakeRunner:
+    """Record Typos invocations and replay configured exit codes."""
+
+    def __init__(self, *returncodes: int) -> None:
+        """Queue exit codes, repeating the last once the queue is exhausted."""
+        self._returncodes = returncodes or (0,)
+        self.calls: list[RunnerCall] = []
+
+    def __call__(
+        self,
+        args: cabc.Sequence[str],
+        /,
+        *,
+        cwd: pathlib.Path,
+        check: bool,
+        stdin: int,
+    ) -> subprocess.CompletedProcess[bytes]:
+        """Record one invocation and return its configured completion.
+
+        A shared fake cannot use a bare assertion, because ``conftest`` is not
+        rewritten by pytest, so each misuse fails the calling test explicitly.
+        """
+        if check:
+            pytest.fail("the gate must inspect exit codes rather than raise")
+        if stdin != subprocess.DEVNULL:
+            pytest.fail("Typos must not inherit standard input")
+        index = min(len(self.calls), len(self._returncodes) - 1)
+        self.calls.append(RunnerCall(tuple(args), cwd, (cwd / "typos.toml").is_file()))
+        return subprocess.CompletedProcess(list(args), self._returncodes[index])
 
 
 def authority_text(
@@ -25,7 +91,7 @@ def authority_text(
     Ignore patterns are emitted as TOML literal strings so a regular
     expression needs no backslash escaping at the fixture boundary.
     """
-    patterns = ", ".join(f"'{pattern}'" for pattern in ignore)
+    patterns = ", ".join(json.dumps(pattern) for pattern in ignore)
     return (
         "schema = 1\n\n[oxford]\n"
         f'stems = ["{stem}"]\n\n'
@@ -35,6 +101,49 @@ def authority_text(
         f"[patterns]\nignore = [{patterns}]\n\n"
         '[files]\nexclude = [".git"]\n'
     )
+
+
+def cache_text(
+    *,
+    corrections: cabc.Sequence[tuple[str, str]] = ((PROHIBITED, CORRECTION),),
+    ignore: cabc.Sequence[str] = (),
+    exclude: cabc.Sequence[str] = (".git",),
+) -> str:
+    """Return a complete authority document carrying phrase corrections."""
+    entries = "".join(
+        f'"{phrase}" = "{correction}"\n' for phrase, correction in corrections
+    )
+    excludes = ", ".join(f'"{item}"' for item in exclude)
+    return (
+        authority_text(ignore=ignore)
+        .replace("[phrases.corrections]\n", f"[phrases.corrections]\n{entries}")
+        .replace('exclude = [".git"]', f"exclude = [{excludes}]")
+    )
+
+
+def _git(repository: pathlib.Path, *arguments: str) -> None:
+    """Run one Git command inside a fixture repository."""
+    subprocess.run(  # noqa: S603
+        ["git", "-C", str(repository), *arguments],  # noqa: S607
+        check=True,
+        capture_output=True,
+        stdin=subprocess.DEVNULL,
+    )
+
+
+def build_repository(
+    root: pathlib.Path, files: cabc.Mapping[str, str], *, name: str = "repository"
+) -> pathlib.Path:
+    """Create and stage a tracked-file fixture repository."""
+    repository = root / name
+    repository.mkdir(parents=True, exist_ok=True)
+    for relative, content in files.items():
+        target = repository / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+    _git(repository, "init", "--quiet")
+    _git(repository, "add", "-A")
+    return repository
 
 
 def seed_cache(

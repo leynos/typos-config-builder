@@ -134,6 +134,15 @@ def test_non_transient_client_status_is_not_masked(
     assert error.value is failure
 
 
+def bootstrap_error_classes(caplog: pytest.LogCaptureFixture) -> list[str | None]:
+    """Return the error class of every bootstrap decision that was logged."""
+    return [
+        getattr(record, "error_class", None)
+        for record in caplog.records
+        if getattr(record, "decision", None) == "bootstrap"
+    ]
+
+
 def test_unreachable_authority_without_cache_bootstraps_from_bundle(
     repository: pathlib.Path,
     caplog: pytest.LogCaptureFixture,
@@ -155,12 +164,7 @@ def test_unreachable_authority_without_cache_bootstraps_from_bundle(
         "sha256": cache.digest(bundle.read_bytes()),
         "bootstrap": True,
     }
-    decisions = [
-        getattr(record, "decision", None)
-        for record in caplog.records
-        if record.levelno >= logging.WARNING
-    ]
-    assert "bootstrap" in decisions
+    assert bootstrap_error_classes(caplog) == ["network-unavailable"]
 
 
 @pytest.mark.parametrize(
@@ -205,6 +209,7 @@ def test_bootstrap_is_used_only_without_a_source_matching_cache(
 
 def test_offline_without_cache_bootstraps_from_bundle(
     repository: pathlib.Path,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Offline operation without a cache establishes shared policy from the bundle."""
     bundle = _bundled_snapshot(repository)
@@ -212,10 +217,14 @@ def test_offline_without_cache_bootstraps_from_bundle(
     metadata = repository / "cache.json"
     options = cache.RefreshOptions(metadata=metadata, offline=True, bootstrap=bundle)
 
-    result = cache.refresh(SOURCE, cache_path, policy.validate_bytes, options)
+    with caplog.at_level(logging.WARNING, logger="typos_config_builder"):
+        result = cache.refresh(SOURCE, cache_path, policy.validate_bytes, options)
 
     assert result.status == "bootstrap"
     assert cache_path.read_bytes() == bundle.read_bytes()
+    # Offline operation never attempted the network, so a network failure
+    # would misdescribe why the bundled snapshot was used.
+    assert bootstrap_error_classes(caplog) == ["offline-no-cache"]
 
 
 def test_offline_with_bootstrapped_cache_reuses_it(repository: pathlib.Path) -> None:

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import pathlib
-import subprocess  # noqa: S404
+
+# Only CalledProcessError is used here, to report a failed Git enumeration
+# as one concise line; this module never starts a process itself.
+import subprocess  # noqa: S404 - the module is imported for its exception type.
 import sys
 import typing as typ
 
@@ -88,7 +91,9 @@ def run(
         Local path or HTTPS authority. The live shared dictionary on the
         origin's ``main`` branch is used by default.
     offline
-        Require an already-valid local cache when true.
+        Forbid refresh from the authority. With the default source and no
+        valid cache, the bundled snapshot is used instead; with an explicit
+        source, a valid cache is required.
     check
         Report generated-config drift without writing output when true.
 
@@ -164,7 +169,9 @@ def gate(
         Local path or HTTPS authority. The live shared dictionary is used by
         default.
     offline
-        Require an already-valid local cache when true.
+        Forbid refresh from the authority. With the default source and no
+        valid cache, the bundled snapshot is used instead; with an explicit
+        source, a valid cache is required.
     scope
         Check tracked Markdown only, or every tracked file.
 
