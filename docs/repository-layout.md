@@ -5,6 +5,8 @@ This reference identifies the small set of paths that define the builder.
 - The Python 3.14 library and Cyclopts CLI live in `typos_config_builder/`.
 - `typos_config_builder/phrases.py` enforces the shared phrase corrections
   that Typos cannot express, and is the only module that shells out to Git.
+- `typos_config_builder/gate.py` runs the whole gate: generation, the pinned
+  Typos binary, and the phrase check.
 - Focused unit and command-boundary tests are kept in `tests/`.
 - Maintainer guidance, the user contract, design, and decision record belong in
   `docs/`.

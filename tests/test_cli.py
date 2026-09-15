@@ -142,3 +142,51 @@ def test_check_phrases_reports_a_missing_cache(
     assert captured.err.startswith("error: ")
     assert "typos-config-builder" in captured.err
     assert "Traceback" not in captured.err
+
+
+def _gate_authority(tmp_path: Path) -> Path:
+    """Write a local authority carrying one stem and the prohibited phrase."""
+    authority = tmp_path / "gate-authority.toml"
+    authority.write_text(cache_text(), encoding="utf-8")
+    return authority
+
+
+def test_gate_exits_zero_for_a_clean_repository(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The whole gate reports the refresh status and succeeds."""
+    repository = build_repository(tmp_path, {"README.md": "Ordinary prose.\n"})
+
+    with pytest.raises(SystemExit) as exit_status:
+        app([
+            "gate",
+            "--repository",
+            str(repository),
+            "--source",
+            str(_gate_authority(tmp_path)),
+        ])
+
+    captured = capsys.readouterr()
+    assert exit_status.value.code == 0
+    assert "typos.toml" in captured.out
+    assert not captured.err
+
+
+def test_gate_exits_two_for_a_prohibited_phrase(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A phrase finding fails the gate and is printed as a location."""
+    repository = build_repository(tmp_path, {"README.md": f"Prefer {PROHIBITED}.\n"})
+
+    with pytest.raises(SystemExit) as exit_status:
+        app([
+            "gate",
+            "--repository",
+            str(repository),
+            "--source",
+            str(_gate_authority(tmp_path)),
+        ])
+
+    captured = capsys.readouterr()
+    assert exit_status.value.code == 2
+    assert f"README.md:1:8: {PROHIBITED} -> {CORRECTION}" in captured.out

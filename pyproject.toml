@@ -5,7 +5,7 @@ description = "Build deterministic en-GB-oxendict configuration for typos"
 readme = "README.md"
 requires-python = ">=3.14"
 license = { text = "ISC" }
-dependencies = ["cyclopts>=4.22.5,<5", "pathspec>=1.1.1,<2"]
+dependencies = ["cyclopts>=4.22.5,<5", "pathspec>=1.1.1,<2", "typos==1.48.0"]
 
 [project.scripts]
 typos-config-builder = "typos_config_builder.cli:main"
@@ -302,6 +302,9 @@ enable = [
 # Tests automatically killed after seconds elapsed
 timeout = 30
 testpaths = ["tests"]
+markers = [
+    "slow: exercises a real external binary rather than an injected double",
+]
 
 [tool.uv]
 package = true

@@ -119,7 +119,11 @@ R1 to R14 are the requirement identifiers used below.
   `typos_config_builder/phrases.py`, the Cyclopts `check-phrases` command,
   the `pathspec` dependency, `tests/test_phrases.py`, three command-boundary
   tests, the users' guide section, and this repository's `spelling` target.
-- [ ] EP-M5 `gate` command with pinned Typos and `--scope`.
+- [x] (2026-09-15 09:40Z) EP-M5 `gate` command with pinned Typos and
+  `--scope`: `typos_config_builder/gate.py`, the Cyclopts `gate` command, the
+  shared CLI error translation, the `typos==1.48.0` dependency,
+  `tests/test_gate.py`, two command-boundary tests, the users' guide gate
+  section, and this repository's one-line `spelling` target.
 - [ ] EP-M6 port fork tests worth keeping; docs and ADR amendment; tag.
 - [ ] EP-M7 agent-helper-scripts: style-guide patterns and docs pointing
   at the builder. (2026-09-14 22:35Z) PR leynos/agent-helper-scripts#152
@@ -192,6 +196,26 @@ R1 to R14 are the requirement identifiers used below.
   Response: this repository's `typos.local.toml` excludes the snapshot, which is
   the designed repository-specific knob. `agent-helper-scripts` solves the same
   problem the same way in its own vendored checker.
+- Observation: the packet's `gate(repository, *, source, offline, scope,
+  runner)` signature has five parameters, and both Ruff's `PLR0913` and Pylint
+  are configured here with `max-args = 4`, so it was rejected by
+  `uv run ruff check` before any test ran.
+  Response: the authority, cache policy, and scope moved into a frozen
+  `gate.GateOptions`, following the `cache.RefreshOptions` and
+  `cache.BootstrapRequest` precedent recorded on 2026-09-14 23:58Z. The
+  delivered signature is `gate(repository, options=None, *, runner=...)`. The
+  `cli.gate` command signature named in `Interfaces and dependencies` is
+  unchanged, so the consumer-facing contract is exactly as planned.
+- Observation: Ruff rejects a property docstring that opens with a verb, so
+  `GateResult.status` and `GateResult.is_clean` document themselves as noun
+  phrases rather than in the `Return ...` style the module's functions use.
+- Observation: one run of `uv run pytest tests/test_cli.py` stalled for more
+  than thirty seconds inside `git init` in the pre-existing
+  `test_check_phrases_reports_a_missing_cache` fixture and was killed by
+  `pytest-timeout`. The identical command immediately afterwards reported
+  `10 passed` in 18 seconds, and the stall was in a fixture untouched by this
+  milestone. It is recorded as an environment hiccup, not a contract change;
+  if it recurs, the fixture's Git invocations are the place to look.
 - Observation: `phrases.py` stands at 389 lines with full numpydoc sections, so
   it has almost no headroom under the four-hundred-line limit. EP-M5 puts the
   Typos runner in a separate `gate.py`, but any further phrase behaviour should
@@ -583,8 +607,30 @@ Each milestone records red and green evidence here.
   The PyPy-backed runner then reports `10.00/10` over
   `typos_config_builder tests`, and `tests/test_phrases.py` and
   `tests/test_cli.py` still report `14 passed` and `8 passed`.
-- M5 red: `uv run pytest tests/test_gate.py` fails on import. Green: all
-  pass; `uv run typos-config-builder gate` in this repository exits 0.
+- M5 red (2026-09-15 08:45Z): with `typos_config_builder/gate.py` present only
+  as signatures raising `NotImplementedError` and the new contracts marked
+  `xfail(strict=True)`, `uv run pytest tests/test_gate.py -q` reports
+  `14 xfailed` and `uv run pytest tests/test_cli.py -q` reports
+  `8 passed, 2 xfailed`, so the eight pre-existing command tests were
+  unaffected.
+- M5 green (2026-09-15 09:35Z): with the markers removed and the module
+  implemented, `uv run pytest tests/test_gate.py -q` reports `14 passed`,
+  `uv run pytest tests/test_cli.py -q` reports `10 passed`, and
+  `uv run pytest tests/test_phrases.py -q` still reports `14 passed`.
+  Non-vacuity: the ordering test asserts that `typos.toml` existed at the
+  moment the injected runner was called, which a gate running Typos before the
+  builder cannot satisfy; the phrase-ordering test drives the injected runner
+  to exit 2 and still requires the phrase finding, which a short-circuiting
+  gate cannot satisfy. Two `slow`-marked tests run the real pinned binary:
+  a repository whose Markdown carries a plain-British form of an Oxford stem
+  reports `typos_exit == 2`, and the Oxford form reports 0 and a clean gate.
+  `uv run ruff format`, `uv run ruff check`, `uv run ty check`, and
+  `uv run interrogate --fail-under 100` over `typos_config_builder tests` all
+  pass, and `markdownlint-cli2` over the three changed documents reports
+  `0 error(s)`. `gate.py` is 341 lines and `cli.py` is 204 lines.
+  `uv run typos-config-builder gate --repository .` reports
+  `current: typos.toml` and exits 0. The full `make all` gate is run by the
+  lead.
 
 ## Idempotence and recovery
 
@@ -616,7 +662,21 @@ def gate(repository: Path | None = None, source: str | None = None, *,
          offline: bool = False, scope: Scope = "markdown") -> None: ...
 ```
 
-with `Scope = typing.Literal["markdown", "all"]`, and in
+with `Scope = typing.Literal["markdown", "all"]`. The module behind the
+command exposes:
+
+```python
+@dc.dataclass(frozen=True, slots=True)
+class GateOptions:
+    source: str | None = None
+    offline: bool = False
+    scope: Scope = "markdown"
+
+def gate(repository: Path, options: GateOptions | None = None, *,
+         runner: TyposRunner = subprocess.run) -> GateResult: ...
+```
+
+and in
 `typos_config_builder/builder.py`:
 
 ```python
@@ -703,3 +763,29 @@ Runtime dependencies: `cyclopts`, `pathspec`, `typos`.
   after `*`, `+`, `}` or `?` is unaffected because `_is_repetition_modifier`
   consumes it first. `hypothesis` was added to the dev dependency group.
   `patterns.py` stands at 218 lines.
+- 2026-09-15 09:40Z: EP-M5 implemented. `typos_config_builder/gate.py` provides
+  `Scope`, `TyposRunner`, `TyposUnavailableError`, `GateOptions`, `GateResult`,
+  `select_files`, `typos_executable`, `run_typos`, and `gate`. `typos_executable`
+  prefers the console script installed beside `sys.executable` so the pinned
+  1.48.0 wins over an unrelated binary earlier on `PATH`, and raises
+  `TyposUnavailableError` naming the interpreter when neither location has it.
+  `run_typos` submits at most 500 paths per invocation with `--config
+  typos.toml --force-exclude`, adds `--hidden` for the `all` scope, runs with
+  `cwd` set to the repository, `check=False`, and `stdin=DEVNULL`, and returns
+  the worst exit code; an empty selection returns 0 without starting a process.
+  `gate` builds in write mode, lists tracked files, runs Typos over the
+  selected scope, and then always runs the phrase check, so a Typos finding
+  never suppresses a phrase finding (INV-7). `cli.py` gained the `gate`
+  command and one shared `EXPECTED_FAILURES` tuple with an `_exit_with_error`
+  handler, which replaced the three commands' duplicated `except` blocks and
+  now also covers `TyposUnavailableError`; `_print_findings` is shared between
+  `check-phrases` and `gate`. `typos==1.48.0` was added to the runtime
+  dependencies and locked. `[tool.pytest.ini_options] markers` gained `slow`
+  for the two tests that run the real binary. This repository's `spelling`
+  target is now the single line `$(UV) run typos-config-builder gate
+  --repository .`, and the unused `TYPOS_VERSION`, `TYPOS`, and
+  `MD_FILES_FIND` variables were removed. The users' guide gained a
+  "Run the whole gate" section carrying the one-command contract, the
+  `.gitignore` lines, the `--scope` table, and the exit codes; its
+  "Deliberate limits" list no longer claims the package never executes Typos,
+  since that is now its job.

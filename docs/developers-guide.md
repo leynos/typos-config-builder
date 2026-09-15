@@ -34,6 +34,20 @@ undecodable tracked file raises `PhraseScanError` with the cause chained,
 rather than being skipped. The module stands at 389 lines, so further phrase
 behaviour should be extracted into a sibling module rather than appended.
 
+`gate.py` composes the whole gate and is the package's only other module that
+starts a process. It imports `builder` for generation and the generated
+configuration's name, and `phrases` for the tracked-file listing and the phrase
+check; nothing imports it except `cli`, so it stays a leaf alongside
+`phrases.py`. The Typos console script is resolved beside `sys.executable`
+first and only then from `PATH`, so the pinned version wins over an unrelated
+binary earlier on the search path. Paths are submitted in chunks so a large
+repository cannot exceed the platform's command-line length limit, and the
+worst exit code of every chunk is the stage's result. `GateOptions` groups the
+authority, cache policy, and scope because `gate` would otherwise exceed the
+repository's four-argument limit once the runner seam is included. The runner
+seam is a `typ.Protocol` naming only the subset of `subprocess.run` the gate
+uses, so a test records invocations without starting a process.
+
 The Python implementation accepted in
 [Weaver pull request 190](https://github.com/leynos/weaver/pull/190) is the
 minimum quality baseline. Subsequent implementation should preserve its typed

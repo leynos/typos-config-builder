@@ -24,6 +24,59 @@ version:
 uvx --from typos-config-builder==X.Y.Z typos-config-builder --check
 ```
 
+## Run the whole gate
+
+One command performs the entire spelling gate. It regenerates `typos.toml`
+from the live shared dictionary, runs the pinned Typos binary over the tracked
+files, and enforces the shared phrase corrections that Typos cannot express:
+
+```bash
+uvx --from "git+https://github.com/leynos/typos-config-builder.git@v0.1.0" \
+  typos-config-builder gate
+```
+
+A consumer repository needs nothing else. It owns an optional
+`typos.local.toml` overlay, two `.gitignore` lines, and this one command. There
+is no vendored script to copy, no Typos version to pin, and no builder revision
+to bump when the shared dictionary changes.
+
+The two `.gitignore` lines keep the untracked cache out of version control:
+
+```gitignore
+.typos-oxendict-base.json
+.typos-oxendict-base.toml
+```
+
+`--repository PATH` gates another repository, `--source SOURCE` selects an
+alternative authority, and `--offline` requires an already-valid cache.
+`--scope` selects what Typos is given:
+
+| Scope | Files checked |
+| --- | --- |
+| `markdown` (default) | Tracked files whose suffix is `.md`. |
+| `all` | Every tracked file, including hidden files and directories. |
+
+The gate always generates configuration in write mode, never in drift-check
+mode. Because the authority is live, a tracked `typos.toml` drifts whenever
+shared policy changes, so a drift check would fail every consumer on every
+dictionary edit.
+
+Typos writes its own findings. Phrase findings follow, in the format
+`check-phrases` uses. Both checking stages always run: a Typos finding never
+suppresses a phrase finding, so one run reports every class of problem.
+
+Exit codes are:
+
+| Exit code | Meaning |
+| --- | --- |
+| 0 | Nothing to correct. |
+| 1 | The gate could not run to completion. |
+| 2 | Typos or the phrase check reported at least one finding. |
+
+Exit code 1 prints a single `error: ...` line on standard error, never a
+traceback. An environment without the pinned Typos binary is reported that way
+rather than as a missing-file traceback.
+
 ## Repository files
 
 The builder operates on four files in the consumer repository:
@@ -183,12 +236,11 @@ temporarily unavailable. A run that has no valid cache and cannot reach the
 authority falls back to the bundled snapshot, so shared policy can always be
 established.
 
-The builder generates and checks configuration, and enforces the shared
-phrase corrections through `check-phrases`. The consumer remains responsible
-for invoking its pinned Typos binary after the configuration check. Entries
-under `[phrases.corrections]` are never rendered, because Typos tokenizes
-hyphenated phrases as separate words and would silently ignore them; they are
-applied by `check-phrases` instead.
+The `gate` command performs the same workflow in write mode and then runs the
+pinned Typos binary and the phrase check, so a consumer needs no separate Typos
+invocation. Entries under `[phrases.corrections]` are never rendered, because
+Typos tokenizes hyphenated phrases as separate words and would silently ignore
+them; the gate applies them itself.
 
 ## Deliberate limits
 
@@ -196,8 +248,9 @@ The package does not:
 
 - discover or crawl the code estate;
 - harvest words or infer spelling policy from repository contents;
-- execute Typos or interpret its findings;
-- check spelling of anything other than the shared phrase corrections;
+- interpret, summarize, or rewrite the findings Typos reports;
+- check spelling itself, beyond the shared phrase corrections Typos cannot
+  express;
 - install or orchestrate Nixie or Merman CLI;
 - provide a general-purpose policy or configuration framework.
 
