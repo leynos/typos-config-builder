@@ -1,6 +1,6 @@
 [project]
 name = "typos-config-builder"
-version = "0.1.1"
+version = "0.1.2"
 description = "Build deterministic en-GB-oxendict configuration for typos"
 readme = "README.md"
 requires-python = ">=3.14"

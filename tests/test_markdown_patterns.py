@@ -147,6 +147,24 @@ def test_confining_an_absent_pattern_still_scopes_it_to_markdown() -> None:
     )
 
 
+def test_overlay_removes_a_base_supplied_markdown_pattern() -> None:
+    """A withdrawal reaches a confinement the shared authority supplied."""
+    base = policy.Dictionary(
+        ignore_patterns=(SHARED_PATTERN,),
+        markdown_patterns=(FENCED_BLOCK, INLINE_SPAN),
+    )
+    overlay = policy.Dictionary(removed_patterns=(INLINE_SPAN,))
+
+    merged = policy.merge(base, overlay)
+
+    assert merged.markdown_patterns == (FENCED_BLOCK,), (
+        "removing a shared confinement should drop it from the Markdown table"
+    )
+    assert merged.ignore_patterns == (SHARED_PATTERN,), (
+        "a withdrawn confinement should not reappear in the default ignore set"
+    )
+
+
 def test_overlay_cannot_both_remove_and_confine_a_pattern() -> None:
     """Withdrawing and confining one expression is contradictory, not resolved."""
     overlay = policy.Dictionary(

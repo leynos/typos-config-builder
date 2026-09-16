@@ -183,7 +183,7 @@ R1 to R14 are the requirement identifiers used below.
   `render.py` emits a `[type.markdown]` table with an `extend-glob` of
   `*.md`, omitting the table when nothing is confined.
   `tests/test_markdown_patterns.py` covers schema acceptance and rejection,
-  the three merge cases, both rendering cases, and two build-level cases.
+  the four merge cases, both rendering cases, and two build-level cases.
   Cohort B3's cuprum needs this because its ADR 009 requires Oxford spelling
   in source identifiers, so the inline-code and fenced-block masks must not
   apply outside documentation.
@@ -406,6 +406,24 @@ R1 to R14 are the requirement identifiers used below.
   keeps the merge rule to one set subtraction and leaves every existing
   consumer's output byte-identical.
   Date/Author: 2026-09-16, EP-M11 preparation.
+
+- Decision: `[patterns] remove` withdraws a Markdown-confined expression as
+  well as an ignored one, but only when the shared authority supplied the
+  confinement. An overlay that both confines and removes one expression is
+  still rejected.
+  Rationale: review of PR 78 found that unioning confinements without
+  subtracting withdrawals would make a shared `markdown_only` entry
+  permanently unwithdrawable, which contradicts the EP-M3 contract that a
+  repository may always be stricter than shared policy. Applying the plain
+  set subtraction to both tables keeps one rule for `remove` whichever table
+  supplied the expression.
+  Date/Author: 2026-09-16, PR 78 review round one.
+
+- Decision: the Markdown confinement key ships in a `v0.1.2` migration guide
+  rather than in the `0.1.0` guide.
+  Rationale: `v0.1.0` and `v0.1.1` are tagged and never carried the key, so
+  documenting it in their guide would misdate the feature.
+  Date/Author: 2026-09-16, PR 78 review round one.
 
 - Decision: the phrase scan keeps using the merged default ignore set only,
   so a Markdown-confined expression does not mask text for `check-phrases`.

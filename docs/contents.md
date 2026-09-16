@@ -13,6 +13,9 @@ documentation set.
 - [Migration guide for 0.1.0](migration-guide-0-1-0.md) explains how a
   consumer replaces a vendored generator and phrase-check script with the
   `gate` command.
+- [Migration guide for 0.1.2](migration-guide-0-1-2.md) explains how a
+  consumer adopts `[patterns] markdown_only` to confine an ignore expression
+  to Markdown.
 - [Repository layout](repository-layout.md) maps the package, tests,
   documentation, and consumer-owned files.
 - [Documentation style guide](documentation-style-guide.md) defines the

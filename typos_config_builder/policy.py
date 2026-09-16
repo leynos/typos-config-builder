@@ -221,8 +221,17 @@ def _merge_items(
 
 
 def _merge_markdown_patterns(base: Dictionary, local: Dictionary) -> tuple[str, ...]:
-    """Union the shared and overlay Markdown-confined expressions."""
-    return tuple(sorted(set(base.markdown_patterns) | set(local.markdown_patterns)))
+    """Union the shared and overlay confinements, then apply withdrawals."""
+    # `remove` withdraws an expression from generated output whichever table
+    # supplied it, so a shared confinement is withdrawable exactly like a
+    # shared ignore. An overlay that confines and removes the same expression
+    # is still contradictory; only a base-supplied confinement is withdrawn.
+    return tuple(
+        sorted(
+            (set(base.markdown_patterns) | set(local.markdown_patterns))
+            - set(local.removed_patterns)
+        )
+    )
 
 
 def _reject_contradictions(local: Dictionary) -> None:

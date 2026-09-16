@@ -116,8 +116,9 @@ they are never rendered into the generated configuration.
 
 ### Confine an ignore pattern to Markdown
 
-Some repositories want a mask to apply to prose but not to code. List those
-expressions under `[patterns] markdown_only` in `typos.local.toml`:
+Available from 0.1.2. Some repositories want a mask to apply to prose but not
+to code. List those expressions under `[patterns] markdown_only` in
+`typos.local.toml`:
 
 ```toml
 schema = 1
@@ -149,9 +150,14 @@ and Rust source is still checked in full.
 
 An expression does not have to exist in the shared dictionary to be confined:
 listing one that is absent simply scopes it to Markdown. Entries are
-validated for regex safety exactly like `ignore` entries. Listing the same
-expression under both `remove` and `markdown_only` is contradictory and is
+validated for regex safety exactly like `ignore` entries. `remove` withdraws
+a confined expression as well as an ignored one, so a repository can drop a
+Markdown mask the shared dictionary ships. Listing the same expression under
+both `remove` and `markdown_only` in one overlay is contradictory and is
 rejected.
+
+See [the migration guide for 0.1.2](migration-guide-0-1-2.md) for the steps a
+consumer whose legacy output carried a `[type.markdown]` table should take.
 
 The `[type.markdown]` table is omitted entirely when the list is empty, so a
 repository that does not use the key generates byte-identical output.
