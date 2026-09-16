@@ -85,10 +85,14 @@ Masking marks every ignored span against the original text and blanks the
 marked characters in one pass, which keeps offsets exact and keeps
 overlapping spans ignored; a sequential substitution per pattern does not.
 
-A tracked path is skipped, not read, when it is a symlink, when it is a
-directory (a submodule gitlink), or when resolving it lands outside the
-worktree through a symlinked parent, so the scan can never follow a link out
-of the repository it was asked to check.
+Tracked files are enumerated with their index modes, and submodule gitlinks
+(mode 160000) are dropped at that point so neither the phrase scan nor the
+Typos run ever sees them. A remaining tracked path is skipped, not read,
+when it is a symlink or when resolving it lands outside the worktree through
+a symlinked parent, so neither stage can follow a link out of the repository
+it was asked to check. A tracked file that has been replaced by a directory
+is an error, not a skip, because that is a worktree anomaly rather than
+policy.
 
 Typos execution is in scope per the amendment to
 [ADR 0001](adrs/0001-keep-the-builder-focused.md): running the pinned Typos
