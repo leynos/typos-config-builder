@@ -6,9 +6,9 @@ reaches its dictionary. The shared authority carries such phrases in
 tracked UTF-8 text using the same ignore patterns and file exclusions as the
 generated configuration.
 
-The scan fails closed: a tracked file that cannot be read or decoded raises
-rather than being skipped, because a silent skip hides exactly the files most
-likely to have drifted.
+Tracked content that is not UTF-8 is binary, so it is skipped. The scan still
+fails closed on a tracked file that cannot be read, because a silent skip there
+hides exactly the files most likely to have drifted.
 """
 
 from __future__ import annotations
@@ -296,8 +296,9 @@ def find_phrases(
     gitignore semantics. A tracked path is skipped when it is a symlink or
     when it resolves outside the worktree through a symlinked parent.
     Submodule gitlinks never reach the scan, because enumeration drops them.
-    Any other tracked path that cannot be read as text, a directory left in
-    place of a file among them, fails the scan rather than being skipped.
+    A tracked file whose bytes are not UTF-8 is binary content and is skipped.
+    Any other tracked path that cannot be read, a directory left in place of a
+    file among them, fails the scan rather than being skipped.
 
     Parameters
     ----------
@@ -316,7 +317,7 @@ def find_phrases(
     FileNotFoundError
         If ``git`` is not available on the executable search path.
     PhraseScanError
-        If a tracked file cannot be read or decoded as UTF-8.
+        If a tracked file cannot be read.
     subprocess.CalledProcessError
         If ``git`` cannot enumerate the repository's tracked files.
     ValueError
@@ -338,5 +339,8 @@ def find_phrases(
         candidate = repository / relative
         if not is_inside_worktree(candidate, root):
             continue
-        findings.extend(scanner.scan(relative, read_tracked_text(candidate, relative)))
+        text = read_tracked_text(candidate, relative)
+        if text is None:
+            continue
+        findings.extend(scanner.scan(relative, text))
     return tuple(findings)

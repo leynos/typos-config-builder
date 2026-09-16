@@ -2,11 +2,13 @@
 
 These tests cover how the phrase check chooses which tracked files to read:
 symlinks and submodule gitlinks are skipped, paths that resolve outside the
-repository are skipped, and unreadable or vanished tracked files fail closed.
+repository are skipped, content that is not UTF-8 is treated as binary and
+skipped, and unreadable or vanished tracked files fail closed.
 """
 
 from __future__ import annotations
 
+import logging
 import pathlib
 import shutil
 import subprocess  # noqa: S404 - fixture Git commands with fixed arguments.
@@ -25,6 +27,10 @@ from typos_config_builder import phrases
 # Placeholder commit identifier for a submodule gitlink. Git records a
 # gitlink without resolving the object, so the commit need not exist.
 GITLINK_COMMIT = "0" * 39 + "1"
+
+# A UTF-16 byte-order mark followed by a NUL: invalid UTF-8, and the kind of
+# leading bytes a tracked image, font, or compiled artefact begins with.
+BINARY_BYTES = b"\xff\xfe\x00binary"
 
 
 def _git(repository: pathlib.Path, *arguments: str) -> None:
@@ -135,19 +141,62 @@ def test_tracked_submodule_directory_is_skipped(tmp_path: pathlib.Path) -> None:
     )
 
 
-def test_undecodable_tracked_file_fails_closed(tmp_path: pathlib.Path) -> None:
-    """Tracked bytes that are not UTF-8 raise rather than being skipped."""
+def test_undecodable_tracked_file_is_skipped_as_binary(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Tracked bytes that are not UTF-8 are binary content, not a scan failure."""
     repository = build_repository(
         tmp_path,
         {".typos-oxendict-base.toml": cache_text(), "README.md": "Initially UTF-8.\n"},
     )
-    (repository / "README.md").write_bytes(b"\xff\xfe")
+    (repository / "README.md").write_bytes(BINARY_BYTES)
 
-    with pytest.raises(phrases.PhraseScanError) as error:
+    assert not phrases.find_phrases(repository, phrases.load_policy(repository)), (
+        "binary tracked content produced a finding"
+    )
+
+
+def test_text_beside_a_binary_tracked_file_is_still_scanned(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Skipping is per file, so decodable siblings are still reported."""
+    repository = build_repository(
+        tmp_path,
+        {
+            ".typos-oxendict-base.toml": cache_text(),
+            "NOTES.md": f"Prefer {PROHIBITED}.\n",
+            "README.md": "Initially UTF-8.\n",
+        },
+    )
+    (repository / "README.md").write_bytes(BINARY_BYTES)
+
+    findings = phrases.find_phrases(repository, phrases.load_policy(repository))
+
+    assert [finding.path for finding in findings] == [pathlib.Path("NOTES.md")]
+
+
+def test_skipping_binary_content_logs_one_bounded_record(
+    tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The skip is visible as a bounded decision that carries no file content."""
+    repository = build_repository(
+        tmp_path,
+        {".typos-oxendict-base.toml": cache_text(), "README.md": "Initially UTF-8.\n"},
+    )
+    (repository / "README.md").write_bytes(BINARY_BYTES)
+
+    with caplog.at_level(logging.DEBUG, logger="typos_config_builder"):
         phrases.find_phrases(repository, phrases.load_policy(repository))
 
-    assert error.value.path == pathlib.Path("README.md")
-    assert isinstance(error.value.__cause__, UnicodeDecodeError)
+    skips = [
+        record
+        for record in caplog.records
+        if getattr(record, "operation", None) == "phrase-scan"
+    ]
+    assert len(skips) == 1
+    assert skips[0].levelno in {logging.DEBUG, logging.INFO}
+    assert getattr(skips[0], "decision", None) == "skipped-binary"
+    assert "README" not in skips[0].getMessage()
 
 
 def test_tracked_files_requires_a_git_repository(tmp_path: pathlib.Path) -> None:

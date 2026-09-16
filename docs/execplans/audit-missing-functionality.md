@@ -209,6 +209,16 @@ R1 to R14 are the requirement identifiers used below.
   was written to qualify. Gitignore gives the last matching pattern priority,
   so the re-inclusion is inert, both in `check-phrases` and in the generated
   `extend-exclude` that Typos itself reads.
+- Observation: the first cohort A migration to carry a tracked binary,
+  `chutoro` with an ELF executable at its repository root, failed the gate
+  with `tracked file could not be scanned: check-f64`. The fail-closed rule
+  adopted on 2026-09-14 covered undecodable text as well as unreadable files,
+  so any repository tracking an image, PDF, font, or wheel would have failed
+  the same way on its first run.
+  Response: released as 0.1.1. Non-UTF-8 tracked content is now skipped as
+  binary with one bounded diagnostic, and the scan fails closed only on a
+  read error, which is a genuine worktree anomaly. That matches the line the
+  origin's ADR 003 already drew.
   Response: EP-M4 mirrors the generated configuration rather than inventing a
   different order, so the gate and Typos agree. The behaviour is documented in
   the users' guide and pinned by
@@ -306,6 +316,14 @@ R1 to R14 are the requirement identifiers used below.
   choices; fail-open hid errors and three repositories had already moved to
   fail-closed.
   Date/Author: 2026-09-14, lead session.
+- Decision: the phrase scan skips tracked files that are not UTF-8 as binary
+  and fails closed only on read errors, replacing the 2026-09-14 lead-session
+  decision to fail closed on undecodable text.
+  Rationale: the first cohort A migration with a tracked binary (chutoro, an
+  ELF at the root) failed the gate; every repository with a tracked image or
+  archive would. The origin's ADR 003 already drew the line at non-UTF-8
+  content.
+  Date/Author: 2026-09-16, lead session.
 - Decision: `gate` runs the builder in write mode, never `--check`.
   Rationale: with a live authority a tracked `typos.toml` checked in CI would
   fail in every consumer on every dictionary edit.
@@ -469,10 +487,13 @@ Invariants introduced or preserved:
 - INV-5 Phrase gate boundaries: a phrase is reported only when not adjacent
   to a word character or hyphen on either side, case-insensitively.
   Method: Hypothesis property over generated neighbour characters.
-- INV-6 Fail closed: an unreadable or undecodable tracked file, or a `git`
-  failure, makes the gate exit non-zero with an error, never exit 0.
-  Method: parameterized tests with a deleted tracked file, a non-UTF-8 file,
-  and a failing `git`.
+- INV-6 Fail closed on read errors, skip binary: an unreadable tracked file
+  or a `git` failure makes the gate exit non-zero with an error, never exit
+  0, while a tracked file whose bytes are not UTF-8 is skipped as binary with
+  one bounded diagnostic and no finding.
+  Method: parameterized tests with a deleted tracked file and a failing
+  `git`, plus a non-UTF-8 file asserted to produce no finding while a
+  decodable sibling in the same repository is still reported.
 - INV-7 Gate ordering: `gate` renders before running Typos, and runs the
   phrase check even when Typos reports findings, returning non-zero if any
   stage fails.
