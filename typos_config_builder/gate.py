@@ -359,7 +359,7 @@ def gate(
     FileNotFoundError
         If ``git`` is absent, or offline mode has no valid cache.
     PhraseScanError
-        If a tracked file cannot be read or decoded as UTF-8.
+        If a tracked file cannot be read.
     TyposFailedError
         If a Typos invocation is killed by a signal.
     TyposUnavailableError

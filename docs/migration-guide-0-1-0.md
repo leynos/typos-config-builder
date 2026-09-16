@@ -76,8 +76,10 @@ valid cache exists and the authority cannot be reached.
   `--check`ed in continuous integration (CI): because the authority is live,
   a tracked `typos.toml` drifts whenever shared policy changes, so a drift
   check would fail every consumer on every dictionary edit.
-- The phrase gate fails closed: an unreadable or undecodable tracked file is
-  an error, not a silent skip. Tracked symlinks, submodule gitlinks, and
+- The phrase gate fails closed on an unreadable tracked file: that is an
+  error, not a silent skip. A tracked file that is not valid UTF-8 is treated
+  as binary and skipped, so a tracked image, font, archive, or compiled
+  artefact does not fail the gate. Tracked symlinks, submodule gitlinks, and
   paths that resolve outside the repository through a symlinked parent are
   skipped rather than scanned.
 - `[patterns] remove` lets a repository withdraw a specific shared ignore

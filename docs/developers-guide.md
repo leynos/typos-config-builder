@@ -78,9 +78,17 @@ test records invocations without starting a process.
 
 ### Fail-closed and worktree-escape rules
 
-The phrase scan fails closed: an unreadable or undecodable tracked file
-raises `PhraseScanError` with the cause chained, rather than being skipped
-because a silent skip hides exactly the file most likely to have drifted.
+A tracked file whose bytes are not UTF-8 is binary as far as a phrase check
+is concerned, so `read_tracked_text` returns `None` after logging one bounded
+`phrase-scan` decision carrying neither the path nor any content, and the
+scanner moves on to the next file. Repositories legitimately track images,
+fonts, archives, and compiled artefacts, and failing on them would fail the
+gate in any such repository.
+
+The phrase scan still fails closed on a read error: an unreadable tracked
+file raises `PhraseScanError` with the `OSError` chained, rather than being
+skipped, because that signals the worktree changed under the scan and a
+silent skip hides exactly the file most likely to have drifted.
 Masking marks every ignored span against the original text and blanks the
 marked characters in one pass, which keeps offsets exact and keeps
 overlapping spans ignored; a sequential substitution per pattern does not.
