@@ -7,9 +7,16 @@ from pathlib import Path
 import pytest
 from conftest import AuthorityFactory, authority_text
 
-from typos_config_builder import ConfigDriftError, build
-from typos_config_builder.cache import atomic_write, read_metadata
+from typos_config_builder import ConfigDriftError, build, builder
+from typos_config_builder.cache import (
+    ContentValidator,
+    RefreshOptions,
+    RefreshResult,
+    atomic_write,
+    read_metadata,
+)
 from typos_config_builder.patterns import validate_local_exceptions
+from typos_config_builder.policy import load
 
 # Split intentional misspellings so the test source passes its own spelling gate.
 PLAIN_BRITISH_ORGANIZE = "organi" + "se"
@@ -193,6 +200,25 @@ def test_undecodable_metadata_is_absent(repository: Path) -> None:
     assert read_metadata(metadata) == {}
 
 
+@pytest.mark.parametrize("payload", [b"not-json", b"[]", b"3", b'"text"'])
+def test_metadata_that_is_not_a_json_object_is_absent(
+    repository: Path,
+    payload: bytes,
+) -> None:
+    """Metadata that is not a JSON object carries no validators.
+
+    Ported from the ``weaver`` fork. The readable control comes first, so a
+    reader that always returned nothing would fail this test.
+    """
+    metadata = repository / METADATA_NAME
+    metadata.write_bytes(b'{"source": "control"}')
+    assert read_metadata(metadata) == {"source": "control"}
+
+    metadata.write_bytes(payload)
+
+    assert read_metadata(metadata) == {}
+
+
 @pytest.mark.parametrize("pattern", ["**/**", "**/*.*"])
 def test_broad_file_glob_equivalents_are_rejected(pattern: str) -> None:
     """Equivalent all-file globs cannot disable repository spelling checks."""
@@ -202,9 +228,96 @@ def test_broad_file_glob_equivalents_are_rejected(pattern: str) -> None:
 
 def test_bundled_authority_contains_handwritten_policy(repository: Path) -> None:
     """The authority accepts the compound and records hyphen correction metadata."""
-    build(repository)
+    build(repository, source=builder.bundled_authority())
 
     words = generated_words(repository)
     cached = tomllib.loads((repository / CACHE_NAME).read_text(encoding="utf-8"))
     assert words["handwritten"] == "handwritten"
     assert cached["phrases"]["corrections"][HYPHENATED_HANDWRITTEN] == "handwritten"
+
+
+def test_default_source_is_live_authority(
+    monkeypatch: pytest.MonkeyPatch,
+    repository: Path,
+) -> None:
+    """Omitting a source selects the live authority with a bundled bootstrap."""
+    captured: dict[str, object] = {}
+
+    def fake_refresh(
+        source: str | Path,
+        cache_path: Path,
+        validate: ContentValidator,
+        options: RefreshOptions,
+    ) -> RefreshResult:
+        """Record the selected authority and seed the cache without a fetch."""
+        captured["source"] = source
+        captured["bootstrap"] = options.bootstrap
+        atomic_write(cache_path, builder.bundled_authority().read_bytes())
+        return RefreshResult("refreshed", cache_path)
+
+    monkeypatch.setattr(builder.cache, "refresh", fake_refresh)
+
+    build(repository)
+
+    assert captured["source"] == builder.DEFAULT_SOURCE
+    assert builder.DEFAULT_SOURCE.startswith("https://raw.githubusercontent.com/")
+    assert captured["bootstrap"] == builder.bundled_authority()
+
+
+SHARED_IGNORE_PATTERN = r"\bSPDX-[A-Za-z0-9.-]+"
+ABSENT_IGNORE_PATTERN = r"\bRFC-[0-9]+"
+
+
+def generated_ignore_patterns(repository: Path) -> list[str]:
+    """Load the generated Typos ignore expressions from a repository."""
+    generated = tomllib.loads((repository / OUTPUT_NAME).read_text(encoding="utf-8"))
+    return generated["default"]["extend-ignore-re"]
+
+
+def write_overlay(repository: Path, body: str) -> Path:
+    """Write a sparse overlay containing one ``[patterns]`` table."""
+    overlay = repository / "typos.local.toml"
+    overlay.write_text(f"schema = 1\n\n[patterns]\n{body}", encoding="utf-8")
+    return overlay
+
+
+def test_local_patterns_remove_withdraws_shared_pattern(
+    authority_factory: AuthorityFactory,
+    repository: Path,
+) -> None:
+    """An overlay withdrawal drops a shared ignore pattern from the output."""
+    authority = authority_factory(ignore=(SHARED_IGNORE_PATTERN,))
+    write_overlay(repository, f"remove = ['{SHARED_IGNORE_PATTERN}']\n")
+
+    build(repository, source=authority)
+
+    assert SHARED_IGNORE_PATTERN not in generated_ignore_patterns(repository)
+
+
+def test_removing_an_absent_pattern_is_a_no_op(
+    authority_factory: AuthorityFactory,
+    repository: Path,
+) -> None:
+    """Withdrawing a pattern the shared base lacks is accepted and changes nothing."""
+    authority = authority_factory(ignore=(SHARED_IGNORE_PATTERN,))
+    overlay = write_overlay(repository, f"remove = ['{ABSENT_IGNORE_PATTERN}']\n")
+
+    build(repository, source=authority)
+
+    assert load(overlay, sparse=True).removed_patterns == (ABSENT_IGNORE_PATTERN,)
+    assert generated_ignore_patterns(repository) == [SHARED_IGNORE_PATTERN]
+
+
+def test_overlay_cannot_both_ignore_and_remove_a_pattern(
+    authority_factory: AuthorityFactory,
+    repository: Path,
+) -> None:
+    """A contradictory overlay is rejected rather than resolved silently."""
+    authority = authority_factory(ignore=(SHARED_IGNORE_PATTERN,))
+    write_overlay(
+        repository,
+        f"ignore = ['{SHARED_IGNORE_PATTERN}']\nremove = ['{SHARED_IGNORE_PATTERN}']\n",
+    )
+
+    with pytest.raises(ValueError, match="both ignores and removes patterns"):
+        build(repository, source=authority)

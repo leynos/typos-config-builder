@@ -8,9 +8,6 @@ USER_WHITAKER := $(HOME)/.local/bin/whitaker
 USER_BIN_PATH := $(HOME)/.cargo/bin:$(HOME)/.local/bin:$(HOME)/.bun/bin
 TOOLS = $(MDFORMAT_ALL) $(MDLINT)
 UV_ENV = PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 UV_CACHE_DIR=.uv-cache UV_TOOL_DIR=.uv-tools
-TYPOS_VERSION ?= 1.48.0
-TYPOS = env $(UV_ENV) $(UV) tool run typos@$(TYPOS_VERSION)
-MD_FILES_FIND = find . -type f -name '*.md' -not -path './.git/*' -print0
 WITH_ACT ?= 0
 ACT_TEST_ENV = $(if $(filter 1 true yes on,$(WITH_ACT)),RUN_ACT_VALIDATION=1,)
 PYTEST_XDIST_WORKERS ?= auto
@@ -112,8 +109,7 @@ markdownlint: $(MDLINT) ## Lint Markdown files and spelling
 	+$(MAKE) spelling
 
 spelling: ## Enforce en-GB-oxendict spelling
-	$(UV) run typos-config-builder --repository . --check
-	$(MD_FILES_FIND) | xargs -0 $(TYPOS) --config typos.toml --force-exclude
+	$(UV) run typos-config-builder gate --repository .
 
 nixie: ## Validate Mermaid diagrams
 	$(call ensure_tool,$(NIXIE))

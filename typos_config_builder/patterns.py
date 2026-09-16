@@ -21,6 +21,19 @@ BACKREFERENCE = re.compile(r"\\(?:[1-9]|g<|k<)|\(\?P=")
 REPETITION = re.compile(r"\{(?:\d+(?:,\d*)?|,\d+)\}")
 
 
+def _is_at_most_once(quantifier: str) -> bool:
+    """Report whether a quantifier can repeat its atom at most once."""
+    # Such a quantifier cannot compound the cost of an ambiguous group: the
+    # group is entered zero times or once, so no outer backtracking multiplies
+    # the alternatives the group already offers. "?", "{0,1}" and "{1}" qualify,
+    # whereas "*", "+", "{1,}" and "{2,5}" do not.
+    if quantifier == "?":
+        return True
+    bounds = quantifier.strip("{}").split(",")
+    upper = bounds[-1]
+    return upper.isdigit() and int(upper) <= 1
+
+
 @dc.dataclass(slots=True)
 class _GroupState:
     """Track ambiguity and adjacent quantified atoms within one regex group."""
@@ -139,8 +152,11 @@ class _RepetitionScanner:
             self.groups[-1].note_atom()
             self._advance_one_character()
             return False
+        quantifier = character if repetition is None else repetition.group()
         is_unsafe = self.groups[-1].note_repetition(
-            repeats_ambiguous_group=self.previous_group_is_ambiguous,
+            repeats_ambiguous_group=(
+                self.previous_group_is_ambiguous and not _is_at_most_once(quantifier)
+            ),
         )
         self.previous_group_is_ambiguous = False
         self.position = self.position + 1 if repetition is None else repetition.end()

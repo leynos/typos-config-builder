@@ -26,8 +26,8 @@ class RemoteResponse(typ.Protocol):
 
     headers: cabc.Mapping[str, str]
 
-    def read(self) -> bytes:
-        """Read the response body."""
+    def read(self, amount: int | None = None, /) -> bytes:
+        """Read the response body, at most ``amount`` bytes when given."""
         ...
 
     def __enter__(self) -> typ.Self:
@@ -59,6 +59,28 @@ class RefreshResult:
 
 
 @dc.dataclass(frozen=True, slots=True, kw_only=True)
+class BootstrapRequest:
+    """Describe seeding one cache from a packaged snapshot.
+
+    Attributes
+    ----------
+    snapshot
+        Packaged snapshot of the shared dictionary.
+    cache
+        Destination for the validated snapshot bytes.
+    metadata
+        Path to the freshness metadata sidecar beside the cache.
+    source
+        Selected authority the seeded cache stands in for.
+    """
+
+    snapshot: pathlib.Path
+    cache: pathlib.Path
+    metadata: pathlib.Path
+    source: str
+
+
+@dc.dataclass(frozen=True, slots=True, kw_only=True)
 class RefreshOptions:
     """Group metadata, offline, and injectable HTTPS-opening policy.
 
@@ -70,11 +92,48 @@ class RefreshOptions:
         Whether refresh must avoid authority access.
     opener
         Optional HTTPS opener used in place of the standard library opener.
+    bootstrap
+        Optional packaged snapshot that seeds the cache when no valid cache
+        exists and the authority cannot be reached.
     """
 
     metadata: pathlib.Path
     offline: bool = False
     opener: Opener | None = None
+    bootstrap: pathlib.Path | None = None
+
+    def bootstrap_request(
+        self, cache: pathlib.Path, source: str
+    ) -> BootstrapRequest | None:
+        """Describe seeding a cache from the snapshot, when one is configured.
+
+        Parameters
+        ----------
+        cache
+            Destination for the snapshot bytes.
+        source
+            Selected authority the seeded cache stands in for.
+
+        Returns
+        -------
+        BootstrapRequest | None
+            Request describing the seeding, or ``None`` when these options
+            carry no snapshot.
+
+        Examples
+        --------
+        >>> options = RefreshOptions(metadata=pathlib.Path("cache.json"))
+        >>> options.bootstrap_request(pathlib.Path("cache.toml"), "local") is None
+        True
+        """
+        if self.bootstrap is None:
+            return None
+        return BootstrapRequest(
+            snapshot=self.bootstrap,
+            cache=cache,
+            metadata=self.metadata,
+            source=source,
+        )
 
 
 class NetworkUnavailableError(OSError):
@@ -147,6 +206,62 @@ def valid_cache(path: pathlib.Path, validate: ContentValidator) -> bool:
     return True
 
 
+def bootstrap_cache(
+    request: BootstrapRequest,
+    validate: ContentValidator,
+    writer: AtomicWriter = atomic_write,
+) -> RefreshResult:
+    """Seed a cache from a packaged snapshot on behalf of a selected source.
+
+    The metadata records the selected source, so an ordinary refresh replaces
+    the snapshot as soon as the authority becomes reachable again. Callers use
+    this only after establishing that no valid source-matching cache exists.
+
+    Parameters
+    ----------
+    request
+        Snapshot, cache, metadata, and selected source for this seeding.
+    validate
+        Callback that rejects invalid snapshot bytes.
+    writer
+        Atomic writer used for the cache and its metadata.
+
+    Returns
+    -------
+    RefreshResult
+        Result reporting the ``bootstrap`` status and the seeded cache.
+
+    Raises
+    ------
+    OSError
+        If the snapshot cannot be read or the cache cannot be written.
+    ValueError
+        If ``validate`` rejects the snapshot bytes.
+
+    Examples
+    --------
+    >>> bootstrap_cache(  # doctest: +SKIP
+    ...     BootstrapRequest(
+    ...         snapshot=pathlib.Path("data/typos-oxendict-base.toml"),
+    ...         cache=pathlib.Path("cache.toml"),
+    ...         metadata=pathlib.Path("cache.json"),
+    ...         source="https://example.com/authority.toml",
+    ...     ),
+    ...     lambda _: None,
+    ... )
+    RefreshResult(status='bootstrap', cache=PosixPath('cache.toml'))
+    """
+    content = request.snapshot.read_bytes()
+    validate(content)
+    writer(request.cache, content)
+    write_metadata(
+        request.metadata,
+        {"source": request.source, "sha256": digest(content), "bootstrap": True},
+        writer,
+    )
+    return RefreshResult("bootstrap", request.cache)
+
+
 def digest(content: bytes) -> str:
     """Return the stable SHA-256 identity of authority bytes."""
     return hashlib.sha256(content).hexdigest()
@@ -199,11 +314,13 @@ def refresh(
     Raises
     ------
     FileNotFoundError
-        If offline mode has no valid cache or a local source is absent.
+        If offline mode has no valid cache and no snapshot is configured, or
+        a local source is absent.
     InsecureSourceError
         If an authority or redirect does not use HTTPS.
     NetworkUnavailableError
-        If an HTTPS authority is unavailable and no valid matching cache exists.
+        If an HTTPS authority is unavailable, no valid matching cache exists,
+        and no bootstrap snapshot is configured.
     ValueError
         If ``validate`` rejects authority or cached content.
 

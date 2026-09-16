@@ -39,6 +39,9 @@ class Dictionary:
         Phrase-level source and replacement pairs.
     ignore_patterns
         Regular expressions ignored by Typos.
+    removed_patterns
+        Shared ignore expressions an overlay withdraws. They are policy
+        metadata used during merging and are never rendered.
     excluded_files
         File globs excluded from spelling checks.
     """
@@ -48,6 +51,7 @@ class Dictionary:
     corrections: tuple[tuple[str, str], ...] = ()
     phrase_corrections: tuple[tuple[str, str], ...] = ()
     ignore_patterns: tuple[str, ...] = ()
+    removed_patterns: tuple[str, ...] = ()
     excluded_files: tuple[str, ...] = ()
 
 
@@ -117,7 +121,10 @@ def _from_text(text: str, *, sparse: bool) -> Dictionary:
     patterns = _table(document, "patterns")
     files = _table(document, "files")
     ignore_patterns = _string_list(patterns, "ignore")
-    for pattern in ignore_patterns:
+    removed_patterns = _string_list(patterns, "remove")
+    # Withdrawals are matched against shared patterns by exact text, so they
+    # must satisfy the same safety rules as the patterns they name.
+    for pattern in (*ignore_patterns, *removed_patterns):
         pattern_policy.compile_pattern(pattern)
     return Dictionary(
         stems=_string_list(oxford, "stems"),
@@ -129,6 +136,7 @@ def _from_text(text: str, *, sparse: bool) -> Dictionary:
             phrases, "corrections", description="phrase corrections"
         ),
         ignore_patterns=ignore_patterns,
+        removed_patterns=removed_patterns,
         excluded_files=_string_list(files, "exclude"),
     )
 
@@ -205,6 +213,24 @@ def _merge_items(
     return tuple(sorted(merged.items()))
 
 
+def _merge_ignore_patterns(base: Dictionary, local: Dictionary) -> tuple[str, ...]:
+    """Union shared and overlay patterns, then apply overlay withdrawals."""
+    # Withdrawing a pattern the shared base does not contain is a harmless
+    # no-op: shared policy may retire a pattern at any time, and a consumer
+    # overlay must not break when it does.
+    removed = set(local.removed_patterns)
+    contradictory = removed & set(local.ignore_patterns)
+    if contradictory:
+        message = (
+            "local overlay both ignores and removes patterns: "
+            f"{', '.join(sorted(contradictory))}"
+        )
+        raise ValueError(message)
+    return tuple(
+        sorted((set(base.ignore_patterns) | set(local.ignore_patterns)) - removed)
+    )
+
+
 def _validate_local_exceptions(local: Dictionary) -> None:
     """Reject repository exceptions capable of disabling broad checking."""
     pattern_policy.validate_local_exceptions(
@@ -230,7 +256,8 @@ def merge(base: Dictionary, local: Dictionary) -> Dictionary:
     Raises
     ------
     ValueError
-        If the overlay is unsafe or conflicts with the shared authority.
+        If the overlay is unsafe, conflicts with the shared authority, or
+        both ignores and removes the same pattern.
 
     Examples
     --------
@@ -253,8 +280,9 @@ def merge(base: Dictionary, local: Dictionary) -> Dictionary:
             local.phrase_corrections,
             label="phrase correction",
         ),
-        ignore_patterns=tuple(
-            sorted(set(base.ignore_patterns) | set(local.ignore_patterns))
+        ignore_patterns=_merge_ignore_patterns(base, local),
+        removed_patterns=tuple(
+            sorted(set(base.removed_patterns) | set(local.removed_patterns))
         ),
         excluded_files=tuple(
             sorted(set(base.excluded_files) | set(local.excluded_files))

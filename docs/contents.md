@@ -5,10 +5,14 @@ documentation set.
 
 ## Project guides
 
-- [User guide](users-guide.md) explains exact-version invocation, consumer
-  files, cache refresh, generation, and drift checking.
+- [User guide](users-guide.md) explains pinned invocation, the `gate`
+  workflow, consumer files, the overlay, drift checking, and phrase-check
+  building blocks.
 - [Developer guide](developers-guide.md) explains the implementation contract,
   quality baseline, and change discipline.
+- [Migration guide for 0.1.0](migration-guide-0-1-0.md) explains how a
+  consumer replaces a vendored generator and phrase-check script with the
+  `gate` command.
 - [Repository layout](repository-layout.md) maps the package, tests,
   documentation, and consumer-owned files.
 - [Documentation style guide](documentation-style-guide.md) defines the
