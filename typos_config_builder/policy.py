@@ -42,6 +42,9 @@ class Dictionary:
     removed_patterns
         Shared ignore expressions an overlay withdraws. They are policy
         metadata used during merging and are never rendered.
+    markdown_patterns
+        Ignore expressions confined to Markdown. They are withheld from the
+        default ignore set and rendered under ``[type.markdown]`` instead.
     excluded_files
         File globs excluded from spelling checks.
     """
@@ -52,6 +55,7 @@ class Dictionary:
     phrase_corrections: tuple[tuple[str, str], ...] = ()
     ignore_patterns: tuple[str, ...] = ()
     removed_patterns: tuple[str, ...] = ()
+    markdown_patterns: tuple[str, ...] = ()
     excluded_files: tuple[str, ...] = ()
 
 
@@ -122,9 +126,11 @@ def _from_text(text: str, *, sparse: bool) -> Dictionary:
     files = _table(document, "files")
     ignore_patterns = _string_list(patterns, "ignore")
     removed_patterns = _string_list(patterns, "remove")
-    # Withdrawals are matched against shared patterns by exact text, so they
-    # must satisfy the same safety rules as the patterns they name.
-    for pattern in (*ignore_patterns, *removed_patterns):
+    markdown_patterns = _string_list(patterns, "markdown_only")
+    # Withdrawals and Markdown confinements are matched against shared
+    # patterns by exact text, so they must satisfy the same safety rules as
+    # the patterns they name.
+    for pattern in (*ignore_patterns, *removed_patterns, *markdown_patterns):
         pattern_policy.compile_pattern(pattern)
     return Dictionary(
         stems=_string_list(oxford, "stems"),
@@ -137,6 +143,7 @@ def _from_text(text: str, *, sparse: bool) -> Dictionary:
         ),
         ignore_patterns=ignore_patterns,
         removed_patterns=removed_patterns,
+        markdown_patterns=markdown_patterns,
         excluded_files=_string_list(files, "exclude"),
     )
 
@@ -213,29 +220,52 @@ def _merge_items(
     return tuple(sorted(merged.items()))
 
 
-def _merge_ignore_patterns(base: Dictionary, local: Dictionary) -> tuple[str, ...]:
-    """Union shared and overlay patterns, then apply overlay withdrawals."""
-    # Withdrawing a pattern the shared base does not contain is a harmless
-    # no-op: shared policy may retire a pattern at any time, and a consumer
-    # overlay must not break when it does.
-    removed = set(local.removed_patterns)
-    contradictory = removed & set(local.ignore_patterns)
-    if contradictory:
-        message = (
-            "local overlay both ignores and removes patterns: "
-            f"{', '.join(sorted(contradictory))}"
-        )
-        raise ValueError(message)
+def _merge_markdown_patterns(base: Dictionary, local: Dictionary) -> tuple[str, ...]:
+    """Union the shared and overlay confinements, then apply withdrawals."""
+    # `remove` withdraws an expression from generated output whichever table
+    # supplied it, so a shared confinement is withdrawable exactly like a
+    # shared ignore. An overlay that confines and removes the same expression
+    # is still contradictory; only a base-supplied confinement is withdrawn.
     return tuple(
-        sorted((set(base.ignore_patterns) | set(local.ignore_patterns)) - removed)
+        sorted(
+            (set(base.markdown_patterns) | set(local.markdown_patterns))
+            - set(local.removed_patterns)
+        )
+    )
+
+
+def _reject_contradictions(local: Dictionary) -> None:
+    """Reject overlays that give one expression two incompatible fates."""
+    removed = set(local.removed_patterns)
+    markdown = set(local.markdown_patterns)
+    for conflicting, message in (
+        (removed & set(local.ignore_patterns), "ignores and removes"),
+        (removed & markdown, "removes and confines to Markdown"),
+    ):
+        if conflicting:
+            detail = f"local overlay both {message} patterns: "
+            raise ValueError(detail + ", ".join(sorted(conflicting)))
+
+
+def _merge_ignore_patterns(
+    base: Dictionary, local: Dictionary, markdown: tuple[str, ...]
+) -> tuple[str, ...]:
+    """Union shared and overlay patterns, then apply overlay exceptions."""
+    # Withdrawing or confining a pattern the shared base does not contain is
+    # a harmless no-op: shared policy may retire a pattern at any time, and a
+    # consumer overlay must not break when it does.
+    excepted = set(local.removed_patterns) | set(markdown)
+    return tuple(
+        sorted((set(base.ignore_patterns) | set(local.ignore_patterns)) - excepted)
     )
 
 
 def _validate_local_exceptions(local: Dictionary) -> None:
     """Reject repository exceptions capable of disabling broad checking."""
     pattern_policy.validate_local_exceptions(
-        local.ignore_patterns, local.excluded_files
+        local.ignore_patterns + local.markdown_patterns, local.excluded_files
     )
+    _reject_contradictions(local)
 
 
 def merge(base: Dictionary, local: Dictionary) -> Dictionary:
@@ -257,7 +287,7 @@ def merge(base: Dictionary, local: Dictionary) -> Dictionary:
     ------
     ValueError
         If the overlay is unsafe, conflicts with the shared authority, or
-        both ignores and removes the same pattern.
+        gives one expression two incompatible fates.
 
     Examples
     --------
@@ -269,6 +299,7 @@ def merge(base: Dictionary, local: Dictionary) -> Dictionary:
     ('Cyclopts', 'Typos')
     """
     _validate_local_exceptions(local)
+    markdown_patterns = _merge_markdown_patterns(base, local)
     return Dictionary(
         stems=tuple(sorted(set(base.stems) | set(local.stems))),
         accepted=tuple(sorted(set(base.accepted) | set(local.accepted))),
@@ -280,10 +311,11 @@ def merge(base: Dictionary, local: Dictionary) -> Dictionary:
             local.phrase_corrections,
             label="phrase correction",
         ),
-        ignore_patterns=_merge_ignore_patterns(base, local),
+        ignore_patterns=_merge_ignore_patterns(base, local, markdown_patterns),
         removed_patterns=tuple(
             sorted(set(base.removed_patterns) | set(local.removed_patterns))
         ),
+        markdown_patterns=markdown_patterns,
         excluded_files=tuple(
             sorted(set(base.excluded_files) | set(local.excluded_files))
         ),

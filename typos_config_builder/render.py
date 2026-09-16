@@ -57,6 +57,20 @@ def _array(name: str, values: tuple[str, ...]) -> list[str]:
     return [f"{name} = [", *(f"    {_string(value)}," for value in values), "]"]
 
 
+def _markdown_section(patterns: tuple[str, ...]) -> list[str]:
+    """Render the Markdown-scoped ignore table, or nothing when unused."""
+    # Omitting the table entirely keeps output byte-identical for every
+    # consumer that does not confine any expression to Markdown.
+    if not patterns:
+        return []
+    return [
+        "[type.markdown]",
+        *_array("extend-glob", ("*.md",)),
+        *_array("extend-ignore-re", patterns),
+        "",
+    ]
+
+
 def render(dictionary: Dictionary) -> str:
     r"""Render a parse-checked ``typos.toml`` document with stable ordering.
 
@@ -94,6 +108,7 @@ def render(dictionary: Dictionary) -> str:
         'locale = "en-gb"',
         *_array("extend-ignore-re", dictionary.ignore_patterns),
         "",
+        *_markdown_section(dictionary.markdown_patterns),
         "[default.extend-words]",
     ]
     lines.extend(
