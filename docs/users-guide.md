@@ -27,8 +27,8 @@ uvx --from typos-config-builder==X.Y.Z typos-config-builder gate
 
 ## Run the whole gate
 
-One command performs the entire spelling gate. It regenerates `typos.toml`
-from the live shared dictionary, runs the pinned Typos binary over the tracked
+One command performs the entire spelling gate. It regenerates `typos.toml` from
+the live shared dictionary, runs the pinned Typos binary over the tracked
 files, and enforces the shared phrase corrections that Typos cannot express:
 
 ```bash
@@ -52,10 +52,10 @@ The two `.gitignore` lines keep the untracked cache out of version control:
 alternative authority, and `--offline` forbids refresh from the authority.
 `--scope` selects what Typos is given:
 
-| Scope | Files checked |
-| --- | --- |
-| `markdown` (default) | Tracked files whose suffix is `.md`. |
-| `all` | Every tracked file, including hidden files and directories. |
+| Scope                | Files checked                                               |
+| -------------------- | ----------------------------------------------------------- |
+| `markdown` (default) | Tracked files whose suffix is `.md`.                        |
+| `all`                | Every tracked file, including hidden files and directories. |
 
 The gate always generates configuration in write mode, never in drift-check
 mode. Because the authority is live, a tracked `typos.toml` drifts whenever
@@ -68,11 +68,11 @@ suppresses a phrase finding, so one run reports every class of problem.
 
 Exit codes are:
 
-| Exit code | Meaning |
-| --- | --- |
-| 0 | Nothing to correct. |
-| 1 | The gate could not run to completion. |
-| 2 | Typos or the phrase check reported at least one finding. |
+| Exit code | Meaning                                                  |
+| --------- | -------------------------------------------------------- |
+| 0         | Nothing to correct.                                      |
+| 1         | The gate could not run to completion.                    |
+| 2         | Typos or the phrase check reported at least one finding. |
 
 Exit code 1 prints a single `error: ...` line on standard error, never a
 traceback. An environment without the pinned Typos binary is reported that way
@@ -110,9 +110,9 @@ Generation unions the shared and local `ignore` lists and then subtracts every
 entry in `remove`, so a withdrawn pattern never reaches `typos.toml`. Matching
 is by exact expression text. Removing a pattern the shared base does not
 contain is a harmless no-op, so an overlay does not break when shared policy
-retires a pattern. Listing the same expression under both `ignore` and
-`remove` is contradictory and is rejected. Withdrawals are policy metadata:
-they are never rendered into the generated configuration.
+retires a pattern. Listing the same expression under both `ignore` and `remove`
+is contradictory and is rejected. Withdrawals are policy metadata: they are
+never rendered into the generated configuration.
 
 ## Generate configuration
 
@@ -129,9 +129,9 @@ The command uses the current directory as the consumer repository. Pass
 explicit alternative authority.
 
 Use `--offline` to forbid refresh from the configured authority. With the
-default source and no valid cache, the bundled snapshot bootstraps the
-cache instead (see Shared dictionary authority, below); with an explicit
-`--source`, `--offline` requires an already-valid cache.
+default source and no valid cache, the bundled snapshot bootstraps the cache
+instead (see Shared dictionary authority, below); with an explicit `--source`,
+`--offline` requires an already-valid cache.
 
 ## Shared dictionary authority
 
@@ -146,8 +146,8 @@ Because the authority is live, an edit to the shared dictionary reaches every
 consumer on its next run. No consumer change, pin bump, or builder release is
 required to pick up a new accepted word.
 
-A refresh treats HTTP 429 like the temporary server statuses 500, 502, 503,
-and 504: the run keeps a valid cache for the selected authority and reports
+A refresh treats HTTP 429 like the temporary server statuses 500, 502, 503, and
+504: the run keeps a valid cache for the selected authority and reports
 `stale-cache` rather than failing. A response body larger than ten mebibytes is
 rejected with an error before any parsing or validation, and the cache is left
 untouched, so a misrouted or hostile response cannot exhaust memory or replace
@@ -166,15 +166,15 @@ cached policy.
 
 `--check` refreshes the cache, merges the local overlay, and compares the
 deterministic rendering with tracked `typos.toml`, exiting non-zero on drift
-without rewriting the tracked file. It is a local inspection tool, useful
-when reviewing whether an overlay change alters the rendered output.
+without rewriting the tracked file. It is a local inspection tool, useful when
+reviewing whether an overlay change alters the rendered output.
 
 Because the authority is live, a tracked `typos.toml` drifts whenever the
 shared dictionary changes, so continuous integration (CI) must not run
 `--check` against a tracked `typos.toml`: that would fail every consumer's
 build on every shared dictionary edit. Use `gate`, which always writes the
-current rendering before checking it with Typos and the phrase check, for
-the CI-facing spelling gate.
+current rendering before checking it with Typos and the phrase check, for the
+CI-facing spelling gate.
 
 ## Check phrase corrections
 
@@ -215,11 +215,11 @@ the scan cannot follow a link out of the repository.
 
 Exit codes are:
 
-| Exit code | Meaning |
-| --- | --- |
-| 0 | No prohibited phrase was found. |
-| 1 | Policy could not be loaded, or tracked text could not be scanned. |
-| 2 | At least one prohibited phrase was found. |
+| Exit code | Meaning                                                           |
+| --------- | ----------------------------------------------------------------- |
+| 0         | No prohibited phrase was found.                                   |
+| 1         | Policy could not be loaded, or tracked text could not be scanned. |
+| 2         | At least one prohibited phrase was found.                         |
 
 Exit code 1 prints a single `error: ...` line on standard error, never a
 traceback. A missing `.typos-oxendict-base.toml` names the builder invocation
@@ -238,10 +238,10 @@ The CLI performs a small, ordered workflow:
    when `--check` is set.
 
 The refresh operation preserves a valid cache when the configured authority is
-temporarily unavailable. With the default source, a run that has no valid
-cache and cannot reach the authority falls back to the bundled snapshot, so
-shared policy can always be established; an explicit `--source` has no such
-fallback and fails instead.
+temporarily unavailable. With the default source, a run that has no valid cache
+and cannot reach the authority falls back to the bundled snapshot, so shared
+policy can always be established; an explicit `--source` has no such fallback
+and fails instead.
 
 The `gate` command performs the same workflow in write mode and then runs the
 pinned Typos binary and the phrase check, so a consumer needs no separate Typos
@@ -263,16 +263,16 @@ corrections, but it still does not:
 
 These limits keep the package focused on applying the shared spelling policy
 consistently, rather than becoming a general estate-tooling platform. See
-[ADR 0001](adrs/0001-keep-the-builder-focused.md) for the full boundary and
-its 2026-09-14 amendment.
+[ADR 0001](adrs/0001-keep-the-builder-focused.md) for the full boundary and its
+2026-09-14 amendment.
 
 ## Migrating an existing consumer
 
 See [the migration guide for 0.1.0](migration-guide-0-1-0.md) for the full
 steps and behaviour changes. In short, a repository that already carries a
-vendored generator, a phrase-check script and test, and a Makefile block
-naming a Typos version and a builder commit can replace all of it with the
-`gate` command:
+vendored generator, a phrase-check script and test, and a Makefile block naming
+a Typos version and a builder commit can replace all of it with the `gate`
+command:
 
 1. Delete the vendored generator script, the vendored phrase-check script,
    and their tests.

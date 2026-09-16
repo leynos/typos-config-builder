@@ -3,10 +3,10 @@
 ## Who this affects
 
 Any repository that already runs its own spelling check pipeline: a vendored
-copy of the configuration generator, a hand-maintained pinned Typos version,
-or a locally written phrase-check script and its tests. This guide describes
-the one-time change to adopt `typos-config-builder`'s `gate` command as the
-single spelling quality gate.
+copy of the configuration generator, a hand-maintained pinned Typos version, or
+a locally written phrase-check script and its tests. This guide describes the
+one-time change to adopt `typos-config-builder`'s `gate` command as the single
+spelling quality gate.
 
 ## Previous consumer workflow
 
@@ -19,24 +19,23 @@ Before this release, a consumer repository typically:
   script, or vendored a full copy of the configuration generator.
 
 Each of those pieces needed independent maintenance, and a 2026-09-14 estate
-sweep found fourteen independently maintained copies of the phrase-check
-script and twenty-eight repositories whose pinned Typos version or builder
-commit had never been bumped since adoption.
+sweep found fourteen independently maintained copies of the phrase-check script
+and twenty-eight repositories whose pinned Typos version or builder commit had
+never been bumped since adoption.
 
 ## New consumer workflow
 
-A consumer now runs one pinned command, `gate`, which regenerates
-`typos.toml` from the live shared dictionary, runs the pinned Typos binary
-over the selected tracked files, and enforces the shared phrase corrections
-Typos cannot express:
+A consumer now runs one pinned command, `gate`, which regenerates `typos.toml`
+from the live shared dictionary, runs the pinned Typos binary over the selected
+tracked files, and enforces the shared phrase corrections Typos cannot express:
 
 ```bash
 uvx --from "git+https://github.com/leynos/typos-config-builder.git@v0.1.0" \
   typos-config-builder gate
 ```
 
-The live shared dictionary is the default source. The package still bundles
-a snapshot of that dictionary, but only as a bootstrap fallback used when no
+The live shared dictionary is the default source. The package still bundles a
+snapshot of that dictionary, but only as a bootstrap fallback used when no
 valid cache exists and the authority cannot be reached.
 
 ## Steps
@@ -66,23 +65,23 @@ valid cache exists and the authority cannot be reached.
 5. Regenerate `typos.toml` once by running the command above, and review the
    diff.
 6. Remove any local overlay entries added only to protect names such as the
-   Azure or GitHub-flavoured Markdown (GFM) style-guide product names, once
-   the shared dictionary carries them; check the regenerated `typos.toml` for
-   the corresponding entries before deleting the overlay lines.
+   Azure or GitHub-flavoured Markdown (GFM) style-guide product names, once the
+   shared dictionary carries them; check the regenerated `typos.toml` for the
+   corresponding entries before deleting the overlay lines.
 
 ## Behaviour changes
 
 - `typos.toml` is rewritten on every `gate` run and must never be
-  `--check`ed in continuous integration (CI): because the authority is live,
-  a tracked `typos.toml` drifts whenever shared policy changes, so a drift
-  check would fail every consumer on every dictionary edit.
+  `--check`ed in continuous integration (CI): because the authority is live, a
+  tracked `typos.toml` drifts whenever shared policy changes, so a drift check
+  would fail every consumer on every dictionary edit.
 - The phrase gate fails closed: an unreadable or undecodable tracked file is
-  an error, not a silent skip. Tracked symlinks, submodule gitlinks, and
-  paths that resolve outside the repository through a symlinked parent are
-  skipped rather than scanned.
+  an error, not a silent skip. Tracked symlinks, submodule gitlinks, and paths
+  that resolve outside the repository through a symlinked parent are skipped
+  rather than scanned.
 - `[patterns] remove` lets a repository withdraw a specific shared ignore
-  expression from its overlay, by exact expression text, without weakening
-  the shared policy for anything else.
+  expression from its overlay, by exact expression text, without weakening the
+  shared policy for anything else.
 - Optional regex groups are accepted in ignore expressions.
 - HTTP 429 is treated as a transient authority error, the same as the 500,
   502, 503, and 504 statuses: a valid cache is kept and the run reports
