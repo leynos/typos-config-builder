@@ -32,7 +32,9 @@ extend-exclude = [
 locale = "en-gb"
 extend-ignore-re = [
     "(?s)```.*?```",
+    "Azure\\s+Architecture\\s+Center\\s*\\|\\s*Microsoft\\s+Learn\\b",
     "Center \\| Microsoft Learn",
+    "GitHub\\s+Flavored\\s+Markdown\\b(?:\\s\\(GFM\\))?",
     "\\brust-analyzer\\b",
     "`[^`\\n]+`",
 ]
