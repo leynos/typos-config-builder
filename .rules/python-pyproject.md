@@ -55,7 +55,8 @@ dependencies = [
   Reddit[^5])
 - **`description` and `readme`:** Although not mandatory, they help with
   indexing and packaging tools; `readme = "README.md"` tells `uv` (and PyPI) to
-  include your README as the long description. (Astral Docs[^1], Python Packaging[^4])
+  include your README as the long description. (Astral Docs[^1], Python
+  Packaging[^4])
 - **`requires-python`:** Constrains which Python interpreters your package
   supports (e.g. `>=3.10`). (Python Packaging[^4], Reddit[^5])
 - **`license`:** Specify a licence as an SPDX identifier (via
@@ -94,10 +95,9 @@ docs = [
 - **`[project.optional-dependencies]`:** Each table key (e.g. `dev`, `docs`)
   defines a "dependency group." You can install a group via
   `uv add --group dev` or `uv sync --include dev`. (Python Packaging[^4],
-  DevsJC[^6])
+  DevsJC [^6])
 - **Why use groups?** You keep the lockfile deterministic (via `uv.lock`) while
-  still separating concerns (test‐only vs. production). (Medium[^7],
-  DevsJC[^6])
+  still separating concerns (test‐only vs. production). (Medium[^7], DevsJC[^6])
 
 ______________________________________________________________________
 
@@ -139,8 +139,8 @@ build-backend = "setuptools.build_meta"
 ```
 
 - **`requires`:** A list of packages needed at build time. For editable installs
-  in `uv`, you need at least `setuptools>=61.0` and `wheel`. (Python
-  Packaging[^4], Astral Docs[^8])
+  in `uv`, you need at least `setuptools>=61.0` and `wheel`. (Python Packaging
+  [^4], Astral Docs[^8])
 - **`build-backend`:** The entry point for your build backend.
   `setuptools.build_meta` is the PEP 517-compliant backend for setuptools.
   (Python Packaging[^4], Astral Docs[^8])
@@ -272,7 +272,8 @@ ______________________________________________________________________
 
 3. **Semantic Versioning:** Follow [semver](https://semver.org/) for `version`
    values (e.g., `1.2.3`). Bump patch versions for bug fixes, minor for
-   backward-compatible changes, and major for breaking changes. (Python Packaging[^4])
+   backward-compatible changes, and major for breaking changes. (Python
+   Packaging[^4])
 
 4. **Keep Build Constraints Minimal:** If you don't need editable installs, you
    can omit `[build-system]` (but then `uv` won't build your package; it will

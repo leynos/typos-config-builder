@@ -13,7 +13,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       ACT_VERSION: v0.2.84
-      MARKDOWNLINT_CLI2_VERSION: 0.22.1
       MBAKE_VERSION: 1.4.6
     steps:
       - name: Check out repository
@@ -41,7 +40,6 @@ jobs:
           )"
           printf '%s  %s\n' "${act_sha256}" "${act_archive}" | sha256sum -c -
           sudo tar -xzf "${act_archive}" -C /usr/local/bin act
-          npm install -g "markdownlint-cli2@${MARKDOWNLINT_CLI2_VERSION}"
           uv tool install "mbake==${MBAKE_VERSION}"
 
       - name: Check Docker runtime
