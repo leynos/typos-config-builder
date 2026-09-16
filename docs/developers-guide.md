@@ -20,7 +20,7 @@ The package targets Python 3.14 and exposes its CLI through the
   then the pinned Typos binary, then the phrase check, and exits with the
   worst of the two checking stages' results.
 
-`cli.py` is the only module every other module is free of: it imports
+`cli.py` is the only module every other module is free of. It imports
 `builder` for the default command, `gate` for the composed workflow, and
 `phrases` for `check-phrases`. Keep policy parsing, cache refresh, overlay
 merging, deterministic rendering, and drift checking free from repository
@@ -53,9 +53,9 @@ Exactly two modules start a process, and each owns a different tool:
   the gate on an inherited terminal. It lists tracked files and reads their
   text, failing closed as described below; `phrases.py` imports it for both
   and re-exports `tracked_files` so callers keep one import site.
-- `gate.py` runs the pinned Typos binary. The console script is resolved
-  beside `sys.executable` first and only then from `PATH`, so the pinned
-  version wins over an unrelated binary earlier on the search path. Paths are
+- `gate.py` runs the pinned Typos binary. The console script must be
+  installed beside `sys.executable`; there is no `PATH` fallback, so an
+  unrelated Typos binary elsewhere on `PATH` can never stand in. Paths are
   submitted in chunks so a large repository cannot exceed the platform's
   command-line length limit, and the worst exit code of every chunk is the
   stage's result.
@@ -79,7 +79,7 @@ test records invocations without starting a process.
 ### Fail-closed and worktree-escape rules
 
 The phrase scan fails closed: an unreadable or undecodable tracked file
-raises `PhraseScanError` with the cause chained, rather than being skipped,
+raises `PhraseScanError` with the cause chained, rather than being skipped
 because a silent skip hides exactly the file most likely to have drifted.
 Masking marks every ignored span against the original text and blanks the
 marked characters in one pass, which keeps offsets exact and keeps

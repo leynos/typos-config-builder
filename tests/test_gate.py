@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import os
 import pathlib
+import subprocess  # noqa: S404 - only a fixture repository's own Git calls.
 
 import pytest
-from conftest import CORRECTION, PROHIBITED, FakeRunner, build_repository, cache_text
+from conftest import CORRECTION, PROHIBITED, FakeRunner, build_repository
 
 from typos_config_builder import cli, gate
 
@@ -21,12 +22,14 @@ PLAIN_BRITISH = "organ" + "ise"
 OXFORD = "organ" + "ize"
 
 
-@pytest.fixture
-def authority(tmp_path: pathlib.Path) -> pathlib.Path:
-    """Return a local authority carrying the prohibited phrase and one stem."""
-    path = tmp_path / "authority.toml"
-    path.write_text(cache_text(), encoding="utf-8")
-    return path
+def stage(repository: pathlib.Path, *paths: str) -> None:
+    """Stage extra paths in a fixture repository after it was built."""
+    subprocess.run(  # noqa: S603
+        ["git", "-C", str(repository), "add", *paths],  # noqa: S607
+        check=True,
+        capture_output=True,
+        stdin=subprocess.DEVNULL,
+    )
 
 
 def test_select_files_keeps_markdown_case_insensitively() -> None:
@@ -214,3 +217,21 @@ def test_real_typos_accepts_oxford_spelling(
 
     assert result.typos_exit == 0
     assert result.is_clean
+
+
+def test_gate_withholds_a_symlink_leaving_the_repository(
+    tmp_path: pathlib.Path, authority: pathlib.Path
+) -> None:
+    """Typos never receives a tracked symlink whose target lies outside."""
+    repository = build_repository(tmp_path, {"README.md": "Ordinary prose only.\n"})
+    external = tmp_path / "external.md"
+    external.write_text("Ordinary prose only.\n", encoding="utf-8")
+    (repository / "external.md").symlink_to(external)
+    stage(repository, "external.md")
+    runner = FakeRunner(0)
+
+    gate.gate(repository, gate.GateOptions(source=str(authority)), runner=runner)
+
+    argv = runner.calls[0].argv
+    assert "README.md" in argv
+    assert "external.md" not in argv, "Typos was pointed outside the worktree"

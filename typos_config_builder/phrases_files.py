@@ -18,8 +18,16 @@ import shutil
 # The phrase gate enumerates tracked files through Git by design; the
 # command is resolved from PATH and its arguments are never user text.
 import subprocess  # noqa: S404
+import typing as typ
 
 from typos_config_builder import builder
+
+if typ.TYPE_CHECKING:
+    import collections.abc as cabc
+
+#: Index mode Git records for a submodule gitlink. A gitlink names a commit in
+#: another repository rather than tracked text, so no stage may submit it.
+GITLINK_MODE = "160000"
 
 #: Policy documents describe prohibited phrases and must never be scanned for
 #: them, otherwise the policy itself becomes a finding.
@@ -52,8 +60,26 @@ class PhraseScanError(Exception):
         super().__init__(f"tracked file could not be scanned: {path}")
 
 
+def _paths_outside_submodules(listing: str) -> set[pathlib.Path]:
+    """Parse ``git ls-files -z --stage`` output, dropping submodule gitlinks."""
+    # Each record is "mode sha stage\tpath", NUL-terminated, so a path
+    # containing whitespace or a tab survives the split intact. An unmerged
+    # path appears once per stage, hence the set.
+    paths: set[pathlib.Path] = set()
+    for record in filter(None, listing.split("\0")):
+        attributes, _, relative = record.partition("\t")
+        if attributes.partition(" ")[0] == GITLINK_MODE:
+            continue
+        paths.add(pathlib.Path(relative))
+    return paths
+
+
 def tracked_files(repository: pathlib.Path) -> tuple[pathlib.Path, ...]:
     """Return a repository's Git-tracked paths in deterministic order.
+
+    Submodule gitlinks are omitted. Git records them as commits in another
+    repository rather than as tracked text, so neither the phrase scanner nor
+    Typos has anything to read at such a path.
 
     Parameters
     ----------
@@ -63,7 +89,7 @@ def tracked_files(repository: pathlib.Path) -> tuple[pathlib.Path, ...]:
     Returns
     -------
     tuple[pathlib.Path, ...]
-        Sorted repository-relative tracked paths.
+        Sorted repository-relative tracked paths, without gitlinks.
 
     Raises
     ------
@@ -82,7 +108,9 @@ def tracked_files(repository: pathlib.Path) -> tuple[pathlib.Path, ...]:
         message = "git was not found on PATH; it is required to list tracked files"
         raise FileNotFoundError(message)
     listing = subprocess.run(  # noqa: S603
-        [executable, "-C", str(repository), "ls-files", "-z"],
+        # --stage carries the index mode, which plain ls-files discards, and
+        # the mode is the only reliable way to recognize a gitlink.
+        [executable, "-C", str(repository), "ls-files", "-z", "--stage"],
         check=True,
         capture_output=True,
         # Git does not read standard input here, but a command double standing
@@ -91,17 +119,44 @@ def tracked_files(repository: pathlib.Path) -> tuple[pathlib.Path, ...]:
         stdin=subprocess.DEVNULL,
         text=True,
     ).stdout
-    return tuple(
-        pathlib.Path(relative) for relative in sorted(filter(None, listing.split("\0")))
-    )
+    return tuple(sorted(_paths_outside_submodules(listing)))
+
+
+def is_inside_worktree(candidate: pathlib.Path, root: pathlib.Path) -> bool:
+    """Report whether a tracked path stays within the worktree boundary.
+
+    Symlinks are never followed. A path whose parent is a symlink is not
+    itself one, yet still resolves outside the worktree, so the resolved path
+    is checked as well.
+
+    Parameters
+    ----------
+    candidate
+        Absolute path to the tracked entry on disk.
+    root
+        Resolved worktree the path must remain within.
+
+    Returns
+    -------
+    bool
+        True when the path names an entry inside the worktree.
+
+    Examples
+    --------
+    >>> root = pathlib.Path(".").resolve()
+    >>> is_inside_worktree(root / "README.md", root)  # doctest: +SKIP
+    True
+    """
+    if candidate.is_symlink():
+        return False
+    return candidate.resolve().is_relative_to(root)
 
 
 def is_scannable(candidate: pathlib.Path, root: pathlib.Path) -> bool:
-    """Report whether a tracked path is text lying inside the worktree.
+    """Report whether a tracked path is a file lying inside the worktree.
 
-    Symlinks are never followed, and submodule gitlinks are directories rather
-    than text. A path whose parent is a symlink is neither, yet still resolves
-    outside the worktree, so the resolved path is checked as well.
+    A directory at a tracked path is an anomaly rather than text, so it is
+    excluded from anything handed to an external checker.
 
     Parameters
     ----------
@@ -113,7 +168,7 @@ def is_scannable(candidate: pathlib.Path, root: pathlib.Path) -> bool:
     Returns
     -------
     bool
-        True when the path may be read as tracked text.
+        True when the path may be submitted as tracked text.
 
     Examples
     --------
@@ -121,9 +176,38 @@ def is_scannable(candidate: pathlib.Path, root: pathlib.Path) -> bool:
     >>> is_scannable(root / "README.md", root)  # doctest: +SKIP
     True
     """
-    if candidate.is_symlink() or candidate.is_dir():
-        return False
-    return candidate.resolve().is_relative_to(root)
+    return is_inside_worktree(candidate, root) and not candidate.is_dir()
+
+
+def select_scannable(
+    repository: pathlib.Path, relatives: cabc.Sequence[pathlib.Path]
+) -> tuple[pathlib.Path, ...]:
+    """Keep the tracked paths an external checker may safely be pointed at.
+
+    Typos follows a path given explicitly, symlink or not, so a tracked
+    symlink leaving the worktree would take the check outside the repository.
+
+    Parameters
+    ----------
+    repository
+        Git worktree the paths are relative to.
+    relatives
+        Repository-relative tracked paths, in the order to preserve.
+
+    Returns
+    -------
+    tuple[pathlib.Path, ...]
+        The subset naming files inside the worktree, order preserved.
+
+    Examples
+    --------
+    >>> select_scannable(pathlib.Path("."), ())
+    ()
+    """
+    root = repository.resolve()
+    return tuple(
+        relative for relative in relatives if is_scannable(repository / relative, root)
+    )
 
 
 def read_tracked_text(path: pathlib.Path, relative: pathlib.Path) -> str:

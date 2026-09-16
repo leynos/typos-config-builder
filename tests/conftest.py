@@ -103,6 +103,15 @@ def authority_text(
     )
 
 
+def overlay_text(*, corrections: cabc.Sequence[tuple[str, str]]) -> str:
+    """Return a sparse overlay contributing extra phrase corrections."""
+    entries = "".join(
+        f"{json.dumps(phrase)} = {json.dumps(correction)}\n"
+        for phrase, correction in corrections
+    )
+    return f"schema = 1\n\n[phrases.corrections]\n{entries}"
+
+
 def cache_text(
     *,
     corrections: cabc.Sequence[tuple[str, str]] = ((PROHIBITED, CORRECTION),),
@@ -111,9 +120,10 @@ def cache_text(
 ) -> str:
     """Return a complete authority document carrying phrase corrections."""
     entries = "".join(
-        f'"{phrase}" = "{correction}"\n' for phrase, correction in corrections
+        f"{json.dumps(phrase)} = {json.dumps(correction)}\n"
+        for phrase, correction in corrections
     )
-    excludes = ", ".join(f'"{item}"' for item in exclude)
+    excludes = ", ".join(json.dumps(item) for item in exclude)
     return (
         authority_text(ignore=ignore)
         .replace("[phrases.corrections]\n", f"[phrases.corrections]\n{entries}")
@@ -123,8 +133,9 @@ def cache_text(
 
 def _git(repository: pathlib.Path, *arguments: str) -> None:
     """Run one Git command inside a fixture repository."""
-    subprocess.run(  # noqa: S603
-        ["git", "-C", str(repository), *arguments],  # noqa: S607
+    subprocess.run(  # noqa: S603 - only fixed, trusted fixture arguments.
+        ["git", "-C", str(repository), *arguments],  # noqa: S607 - git is
+        # intentionally resolved from PATH; fixtures need no absolute path.
         check=True,
         capture_output=True,
         stdin=subprocess.DEVNULL,
@@ -183,7 +194,9 @@ def fake_response(
     """Return a context-manager response with a fixed body and validators."""
     response = mock.MagicMock()
     response.__enter__.return_value = response
-    response.read.return_value = content
+    # A real response streams its body once and then returns b"" at the end,
+    # so the bounded reader's loop must see the same sequence.
+    response.read.side_effect = [content, b""]
     headers: dict[str, str] = {}
     if etag is not None:
         headers["ETag"] = etag
@@ -219,4 +232,12 @@ def repository(tmp_path: Path) -> Path:
     """Return an empty repository directory for one builder invocation."""
     path = tmp_path / "repository"
     path.mkdir()
+    return path
+
+
+@pytest.fixture
+def authority(tmp_path: Path) -> Path:
+    """Return a local authority carrying the prohibited phrase and one stem."""
+    path = tmp_path / "authority.toml"
+    path.write_text(cache_text(), encoding="utf-8")
     return path

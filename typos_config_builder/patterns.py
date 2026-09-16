@@ -22,17 +22,11 @@ REPETITION = re.compile(r"\{(?:\d+(?:,\d*)?|,\d+)\}")
 
 
 def _is_at_most_once(quantifier: str) -> bool:
-    """Report whether a quantifier can repeat its atom at most once.
-
-    Such a quantifier cannot compound the cost of an ambiguous group: the
-    group is entered zero times or once, so no outer backtracking multiplies
-    the alternatives the group already offers.
-
-    Examples
-    --------
-    ``"?"``, ``"{0,1}"`` and ``"{1}"`` are at most once, whereas ``"*"``,
-    ``"+"``, ``"{1,}"`` and ``"{2,5}"`` are not.
-    """
+    """Report whether a quantifier can repeat its atom at most once."""
+    # Such a quantifier cannot compound the cost of an ambiguous group: the
+    # group is entered zero times or once, so no outer backtracking multiplies
+    # the alternatives the group already offers. "?", "{0,1}" and "{1}" qualify,
+    # whereas "*", "+", "{1,}" and "{2,5}" do not.
     if quantifier == "?":
         return True
     bounds = quantifier.strip("{}").split(",")

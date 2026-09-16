@@ -22,7 +22,7 @@ import subprocess  # noqa: S404
 import sys
 import typing as typ
 
-from typos_config_builder import builder, phrases
+from typos_config_builder import builder, phrases, phrases_files
 
 if typ.TYPE_CHECKING:
     import collections.abc as cabc
@@ -336,6 +336,9 @@ def gate(
     tracked ``typos.toml`` drifts whenever estate policy changes, so failing
     on that drift would fail every consumer on every dictionary edit.
 
+    Only tracked paths naming files inside the worktree are submitted to
+    Typos, so no symlink can take the check outside the repository.
+
     Parameters
     ----------
     repository
@@ -376,9 +379,15 @@ def gate(
         repository, selected.source, offline=selected.offline, check=False
     )
     tracked = phrases.tracked_files(repository)
+    # Typos follows a path given on its command line even when that path is a
+    # symlink, so the worktree filter is applied before the paths are handed
+    # over rather than only inside the phrase stage.
+    submitted = phrases_files.select_scannable(
+        repository, select_files(tracked, selected.scope)
+    )
     typos_exit = run_typos(
         repository,
-        select_files(tracked, selected.scope),
+        submitted,
         hidden=selected.scope == "all",
         runner=runner,
     )

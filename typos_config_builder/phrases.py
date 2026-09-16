@@ -13,6 +13,7 @@ likely to have drifted.
 
 from __future__ import annotations
 
+import bisect
 import dataclasses as dc
 import re
 import typing as typ
@@ -25,7 +26,7 @@ from typos_config_builder import policy as policy_document
 from typos_config_builder.phrases_files import (
     POLICY_PATHS,
     PhraseScanError,
-    is_scannable,
+    is_inside_worktree,
     read_tracked_text,
     tracked_files,
 )
@@ -194,6 +195,16 @@ def mask(text: str, patterns: cabc.Sequence[str]) -> str:
     )
 
 
+def _line_starts(text: str) -> tuple[int, ...]:
+    """Return the offset at which each line of the text begins."""
+    starts = [0]
+    index = text.find("\n")
+    while index != -1:
+        starts.append(index + 1)
+        index = text.find("\n", index + 1)
+    return tuple(starts)
+
+
 @dc.dataclass(frozen=True, slots=True)
 class _Scanner:
     """Hold the compiled masking and phrase matchers used for one run."""
@@ -223,15 +234,19 @@ class _Scanner:
     def scan(self, path: pathlib.Path, text: str) -> tuple[PhraseFinding, ...]:
         """Return findings for one unit of text, ordered by policy then position."""
         masked = _blank_marked(text, self.ignore_patterns)
+        # Counting newlines per match rescans the text once per finding, which
+        # is quadratic in a dense file. One pass over the text amortizes it.
+        starts = _line_starts(masked)
         findings: list[PhraseFinding] = []
         for correction, matcher in self.matchers:
             for match in matcher.finditer(masked):
                 start = match.start()
+                line = bisect.bisect_right(starts, start)
                 findings.append(
                     PhraseFinding(
                         path=path,
-                        line=masked.count("\n", 0, start) + 1,
-                        column=start - masked.rfind("\n", 0, start),
+                        line=line,
+                        column=start - starts[line - 1] + 1,
                         phrase=text[start : match.end()],
                         correction=correction,
                     )
@@ -278,9 +293,11 @@ def find_phrases(
     """Find prohibited phrases across a repository's tracked text.
 
     Policy documents are never scanned, and excluded paths are skipped using
-    gitignore semantics. A tracked path is skipped when it is a symlink, when
-    it resolves outside the worktree through a symlinked parent, or when it is
-    a submodule gitlink, which is a directory rather than text.
+    gitignore semantics. A tracked path is skipped when it is a symlink or
+    when it resolves outside the worktree through a symlinked parent.
+    Submodule gitlinks never reach the scan, because enumeration drops them.
+    Any other tracked path that cannot be read as text, a directory left in
+    place of a file among them, fails the scan rather than being skipped.
 
     Parameters
     ----------
@@ -319,7 +336,7 @@ def find_phrases(
         if relative in POLICY_PATHS or exclusions.match_file(relative.as_posix()):
             continue
         candidate = repository / relative
-        if not is_scannable(candidate, root):
+        if not is_inside_worktree(candidate, root):
             continue
         findings.extend(scanner.scan(relative, read_tracked_text(candidate, relative)))
     return tuple(findings)

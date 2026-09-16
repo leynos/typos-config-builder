@@ -287,3 +287,34 @@ def test_unparseable_dates_fall_back_to_conservative_equality(
     they show the comparison is ordinarily by date, not by equality.
     """
     assert cache.remote_is_not_newer(saved, headers) is expected
+
+
+def short_read_response(*chunks: bytes) -> mock.MagicMock:
+    """Return a response whose body arrives in several short reads.
+
+    A real socket may return fewer bytes than requested well before the end
+    of the stream, which the fixed-size fake response cannot express.
+    """
+    response = fake_response(b"".join(chunks))
+    response.read.side_effect = [*chunks, b""]
+    return response
+
+
+def test_short_reads_assemble_the_whole_authority(
+    repository: pathlib.Path,
+) -> None:
+    """A body delivered in two short reads is validated and cached in full."""
+    cache_path, metadata = seed_cache(repository)
+    replacement = authority_text(stem="replacement").encode()
+    options = cache.RefreshOptions(
+        metadata=metadata,
+        opener=mock.Mock(
+            return_value=short_read_response(replacement[:10], replacement[10:])
+        ),
+    )
+
+    result = cache.refresh(SOURCE, cache_path, policy.validate_bytes, options)
+
+    assert result.status == "refreshed"
+    assert cache_path.read_bytes() == replacement
+    assert cache.read_metadata(metadata)["sha256"] == cache.digest(replacement)

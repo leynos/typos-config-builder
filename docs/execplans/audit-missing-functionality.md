@@ -338,13 +338,23 @@ behaviour rather than diverging from the generated configuration.
 
 ## Context and orientation
 
-The package `typos_config_builder/` has seven modules. `cli.py` exposes one
-Cyclopts default command that calls `builder.build`. `builder.py` runs the
-pipeline: `cache.refresh` (delegating to `http.refresh`) refreshes the cache
-file `.typos-oxendict-base.toml` and its metadata sidecar
+The package `typos_config_builder/` has eleven modules, at the time of
+writing (a journeyman may add one more helper module today). `cli.py`
+exposes the Cyclopts default command, `check-phrases`, and `gate`, and calls
+`builder.build` for the first. `builder.py` runs the pipeline: `cache.refresh`
+(delegating to `http.refresh`) refreshes the cache file
+`.typos-oxendict-base.toml` and its metadata sidecar
 `.typos-oxendict-base.json`; `policy.load` and `policy.merge` produce a
 `Dictionary`; `render.render` produces `typos.toml` text; `cache.atomic_write`
 writes it. `patterns.py` validates ignore regexes and local file exclusions.
+`remote.py` owns the HTTPS path, the bounded response read, and the
+cache-identity checks that `http.py` builds `cache.refresh` on top of.
+`gate.py` composes the default command, the pinned Typos binary, and the
+phrase check, and exits with the worst of the two checking stages' results.
+`phrases.py` loads the cached and merged policy and scans tracked text for
+`[phrases.corrections]` violations, independent of Typos. `phrases_files.py`
+resolves `git` through `shutil.which` and lists and reads tracked files,
+which `phrases.py` re-exports as `tracked_files` for `gate.py` to share.
 `data/typos-oxendict-base.toml` is the bundled snapshot of the shared
 dictionary. Tests live in `tests/` (`test_build.py`, `test_cli.py`,
 `test_http.py`, `conftest.py`) and run with `make test`.

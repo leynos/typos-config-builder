@@ -194,13 +194,23 @@ def _bounded_body(
     response: cache_support.RemoteResponse,
 ) -> bytes:
     """Read a response body no larger than the accepted authority size."""
+    chunks: list[bytes] = []
+    received = 0
     try:
-        # One byte beyond the cap is enough to detect an oversized body without
-        # buffering the remainder of the response.
-        content = response.read(MAX_AUTHORITY_BYTES + 1)
+        # A socket may return fewer bytes than asked for long before the end of
+        # the stream, so only an empty read ends the body. Reading at most one
+        # byte beyond the cap detects an oversized body without buffering the
+        # remainder of the response.
+        while received <= MAX_AUTHORITY_BYTES:
+            chunk = response.read(MAX_AUTHORITY_BYTES + 1 - received)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            received += len(chunk)
     except (http.client.HTTPException, OSError) as error:
         message = f"shared dictionary authority is unavailable: {state.source}"
         raise cache_support.NetworkUnavailableError(message) from error
+    content = b"".join(chunks)
     if len(content) > MAX_AUTHORITY_BYTES:
         message = (
             "shared dictionary response exceeds "

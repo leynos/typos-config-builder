@@ -214,12 +214,10 @@ def _merge_items(
 
 
 def _merge_ignore_patterns(base: Dictionary, local: Dictionary) -> tuple[str, ...]:
-    """Union shared and overlay patterns, then apply overlay withdrawals.
-
-    Withdrawing a pattern the shared base does not contain is a harmless
-    no-op: shared policy may retire a pattern at any time, and a consumer
-    overlay must not break when it does.
-    """
+    """Union shared and overlay patterns, then apply overlay withdrawals."""
+    # Withdrawing a pattern the shared base does not contain is a harmless
+    # no-op: shared policy may retire a pattern at any time, and a consumer
+    # overlay must not break when it does.
     removed = set(local.removed_patterns)
     contradictory = removed & set(local.ignore_patterns)
     if contradictory:
