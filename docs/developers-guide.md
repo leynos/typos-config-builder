@@ -12,19 +12,19 @@ The package targets Python 3.14 and exposes its CLI through the
 `pathlib` filesystem paths:
 
 - the **default command** refreshes the cache, merges the overlay, and
-  renders `typos.toml`, writing it or, with `--check`, reporting drift
-  without writing;
+  renders `typos.toml`, writing it or, with `--check`, reporting drift without
+  writing;
 - **`check-phrases`** loads the cached and merged policy and scans tracked
   text for `[phrases.corrections]` violations, independent of Typos; and
 - **`gate`** composes the two: it runs the default command in write mode,
-  then the pinned Typos binary, then the phrase check, and exits with the
-  worst of the two checking stages' results.
+  then the pinned Typos binary, then the phrase check, and exits with the worst
+  of the two checking stages' results.
 
-`cli.py` is the only module every other module is free of. It imports
-`builder` for the default command, `gate` for the composed workflow, and
-`phrases` for `check-phrases`. Keep policy parsing, cache refresh, overlay
-merging, deterministic rendering, and drift checking free from repository
-discovery or external-tool orchestration.
+`cli.py` is the only module every other module is free of. It imports `builder`
+for the default command, `gate` for the composed workflow, and `phrases` for
+`check-phrases`. Keep policy parsing, cache refresh, overlay merging,
+deterministic rendering, and drift checking free from repository discovery or
+external-tool orchestration.
 
 ### Module dependency edges
 
@@ -51,8 +51,8 @@ Exactly two modules start a process, and each owns a different tool:
 - `phrases_files.py` runs `git`, resolving the executable through
   `shutil.which` and closing standard input so a command double cannot wedge
   the gate on an inherited terminal. It lists tracked files and reads their
-  text, failing closed as described below; `phrases.py` imports it for both
-  and re-exports `tracked_files` so callers keep one import site.
+  text, failing closed as described below; `phrases.py` imports it for both and
+  re-exports `tracked_files` so callers keep one import site.
 - `gate.py` runs the pinned Typos binary. The console script must be
   installed beside `sys.executable`; there is no `PATH` fallback, so an
   unrelated Typos binary elsewhere on `PATH` can never stand in. Paths are
@@ -65,16 +65,16 @@ files through `phrases.tracked_files`, which delegates to `phrases_files.py`.
 
 ### The four-hundred-line rule
 
-Keep each module under four hundred lines; split a module into a sibling
-before appending further behaviour once it approaches the limit. Headroom is
-thin in two modules: `gate.py` sits at 389 lines, and `remote.py`, which owns
-the HTTPS path, the bounded response read, the cache-identity checks, and the
-bounded refresh diagnostics, sits at 371 lines. Prefer a new sibling module
-over growing either one further. `GateOptions` groups the authority, cache
-policy, and scope because `gate` would otherwise exceed the repository's
-four-argument limit once the runner seam is included. The runner seam is a
-`typ.Protocol` naming only the subset of `subprocess.run` the gate uses, so a
-test records invocations without starting a process.
+Keep each module under four hundred lines; split a module into a sibling before
+appending further behaviour once it approaches the limit. Headroom is thin in
+two modules: `gate.py` sits at 389 lines, and `remote.py`, which owns the HTTPS
+path, the bounded response read, the cache-identity checks, and the bounded
+refresh diagnostics, sits at 371 lines. Prefer a new sibling module over
+growing either one further. `GateOptions` groups the authority, cache policy,
+and scope because `gate` would otherwise exceed the repository's four-argument
+limit once the runner seam is included. The runner seam is a `typ.Protocol`
+naming only the subset of `subprocess.run` the gate uses, so a test records
+invocations without starting a process.
 
 ### Type-scoped rendering
 
@@ -97,29 +97,28 @@ renderer stays a pure function of normalized policy.
 
 ### Fail-closed and worktree-escape rules
 
-A tracked file whose bytes are not UTF-8 is binary as far as a phrase check
-is concerned, so `read_tracked_text` returns `None` after logging one bounded
+A tracked file whose bytes are not UTF-8 is binary as far as a phrase check is
+concerned, so `read_tracked_text` returns `None` after logging one bounded
 `phrase-scan` decision carrying neither the path nor any content, and the
 scanner moves on to the next file. Repositories legitimately track images,
 fonts, archives, and compiled artefacts, and failing on them would fail the
 gate in any such repository.
 
-The phrase scan still fails closed on a read error: an unreadable tracked
-file raises `PhraseScanError` with the `OSError` chained, rather than being
-skipped, because that signals the worktree changed under the scan and a
-silent skip hides exactly the file most likely to have drifted.
-Masking marks every ignored span against the original text and blanks the
-marked characters in one pass, which keeps offsets exact and keeps
-overlapping spans ignored; a sequential substitution per pattern does not.
+The phrase scan still fails closed on a read error: an unreadable tracked file
+raises `PhraseScanError` with the `OSError` chained, rather than being skipped,
+because that signals the worktree changed under the scan and a silent skip
+hides exactly the file most likely to have drifted. Masking marks every ignored
+span against the original text and blanks the marked characters in one pass,
+which keeps offsets exact and keeps overlapping spans ignored; a sequential
+substitution per pattern does not.
 
 Tracked files are enumerated with their index modes, and submodule gitlinks
 (mode 160000) are dropped at that point so neither the phrase scan nor the
-Typos run ever sees them. A remaining tracked path is skipped, not read,
-when it is a symlink or when resolving it lands outside the worktree through
-a symlinked parent, so neither stage can follow a link out of the repository
-it was asked to check. A tracked file that has been replaced by a directory
-is an error, not a skip, because that is a worktree anomaly rather than
-policy.
+Typos run ever sees them. A remaining tracked path is skipped, not read, when
+it is a symlink or when resolving it lands outside the worktree through a
+symlinked parent, so neither stage can follow a link out of the repository it
+was asked to check. A tracked file that has been replaced by a directory is an
+error, not a skip, because that is a worktree anomaly rather than policy.
 
 Typos execution is in scope per the amendment to
 [ADR 0001](adrs/0001-keep-the-builder-focused.md): running the pinned Typos
@@ -136,11 +135,10 @@ quality, not permission to copy consumer-specific behaviour into the package.
 ## Change discipline
 
 New behaviour belongs here only when it is necessary to refresh the shared
-dictionary cache, combine it with a local overlay, generate `typos.toml`,
-check drift, run the pinned Typos binary, or enforce the shared phrase
-corrections. Estate inventory, spelling discovery, and other documentation
-tooling remain out of scope and belong in their respective repositories or
-consumer workflows.
+dictionary cache, combine it with a local overlay, generate `typos.toml`, check
+drift, run the pinned Typos binary, or enforce the shared phrase corrections.
+Estate inventory, spelling discovery, and other documentation tooling remain
+out of scope and belong in their respective repositories or consumer workflows.
 
 Prefer small tests at stable input and output boundaries. Add regression
 coverage for changed behaviour, but do not expand the test matrix speculatively

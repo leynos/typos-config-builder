@@ -5,10 +5,10 @@ https://deepwiki.com/leynos/typos-config-builder)
 
 `typos-config-builder` provides one versioned Python 3.14 command-line
 interface (CLI) for enforcing the estate's en-GB-oxendict spelling policy. Its
-`gate` command refreshes the shared Oxford dictionary cache when the
-authority is newer, merges a repository-local overlay, renders deterministic
-`typos.toml` configuration, runs the pinned Typos binary over the tracked
-files, and enforces the shared phrase corrections Typos cannot express.
+`gate` command refreshes the shared Oxford dictionary cache when the authority
+is newer, merges a repository-local overlay, renders deterministic `typos.toml`
+configuration, runs the pinned Typos binary over the tracked files, and
+enforces the shared phrase corrections Typos cannot express.
 
 The default authority is the live shared dictionary on the `main` branch of
 `leynos/agent-helper-scripts`, so an edit to that dictionary reaches every
@@ -16,8 +16,8 @@ consumer on its next run without any consumer change. The packaged snapshot of
 the dictionary is a bootstrap fallback only: it seeds the cache when no valid
 cache exists and the authority cannot be reached.
 
-Until the package has a registry release, consumers should pin an exact Git
-tag so that an update is an explicit policy change:
+Until the package has a registry release, consumers should pin an exact Git tag
+so that an update is an explicit policy change:
 
 ```bash
 uvx --from "git+https://github.com/leynos/typos-config-builder.git@v0.1.0" \
