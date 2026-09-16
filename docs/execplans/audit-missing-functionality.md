@@ -143,13 +143,24 @@ R1 to R14 are the requirement identifiers used below.
   style (bare asserts, NumPy sections on test helpers) with reasons on
   the threads; the dependency audit is fixed by pinning pip in the dev
   group.
-- [ ] EP-M7 agent-helper-scripts: style-guide patterns and docs pointing
+  (2026-09-16 13:00Z) PR `leynos/typos-config-builder#69` squash-merged as
+  `4525961` after three review rounds by Codex and CodeRabbit, totalling
+  32 findings fixed and 3 skipped as suite-wide style, with issue `#70`
+  tracking assertion messages. Tag `v0.1.0` was pushed on `4525961` and
+  the Release Wheels workflow succeeded.
+- [x] EP-M7 agent-helper-scripts: style-guide patterns and docs pointing
   at the builder. (2026-09-14 22:35Z) PR leynos/agent-helper-scripts#152
   opened from worktree `feature/typos-shared-patterns`; CodeRabbit review
   queued (comenq 03e6db1f, ETA about nine hours); merge on green pending.
   The inline-code pattern was withdrawn from this milestone (see Decision
   log).
-- [ ] EP-M8 cohort A consumers (28 repos).
+  (2026-09-16 13:00Z) PR `leynos/agent-helper-scripts#152` squash-merged
+  as `64bd9ce`: two bounded style-guide masks, docs pointing consumers at
+  `gate`, tests for the masks, and a `v0.3.0` migration guide entry.
+- [ ] EP-M8 cohort A consumers (28 repos). (2026-09-16 13:00Z) Started:
+  pilot PRs for `actix-v2a` (the baseline copy) and `mriya` (the most
+  divergent variant) are in progress; the remaining 26 repositories
+  follow once the pilot recipe proves out.
 - [ ] EP-M9 cohort B1 consumers (22 repos).
 - [ ] EP-M10 templates and cohort B2 (2 templates, 7 repos).
 - [ ] EP-M11 cohort B3 consumers (7 repos).
@@ -265,6 +276,11 @@ R1 to R14 are the requirement identifiers used below.
   `tests/test_phrases.py`, which records the gitlink with
   `git update-index --cacheinfo` rather than adding a real submodule, avoiding
   an inner commit and relaxed file-protocol settings.
+- Observation: the GitHub Actions runner pool was saturated on the morning
+  of 2026-09-16, queueing PR `#69`'s CI for over ten minutes per run, and
+  background watcher shells were killed for memory pressure during the
+  wait.
+  Response: pacing moved from continuous watching to scheduled wakeups.
 
 ## Decision log
 
@@ -322,6 +338,25 @@ R1 to R14 are the requirement identifiers used below.
   overlay line. Until ruled, this repository keeps the overlay entry and
   EP-M7 ships only the two style-guide patterns.
   Date/Author: 2026-09-14, lead session.
+
+- Decision: consumer migrations preserve each repository's current
+  inline-code behaviour while the owner ruling on the shared inline-code
+  mask is pending. Cohort A repositories, which have masked inline code
+  since the first builder pin through the bundled snapshot, add the
+  one-line overlay entry `` `[^`\n]+` `` to `typos.local.toml`; cohorts
+  B1, B2 and B3, which check inline code today, do not.
+  Rationale: the end-to-end run showed all seven findings on a cohort A
+  repository were inline-code spans that its previous configuration
+  masked; changing that during a tooling migration would conflate a
+  policy change with a mechanical one.
+  Date/Author: 2026-09-16, lead session.
+- Decision: both repositories' branch rulesets require only status
+  checks, not an approving review, so PRs `#69` and `#152` were merged
+  with all reviewer threads resolved by the reviewer and required checks
+  green, despite a stale changes-requested decision from the first head.
+  Rationale: every finding had an evidence-backed disposition and the
+  reviewer had re-read the final heads.
+  Date/Author: 2026-09-16, lead session.
 
 ## Outcomes & retrospective
 
@@ -680,6 +715,13 @@ Each milestone records red and green evidence here.
   `uv run typos-config-builder gate --repository .` reports
   `current: typos.toml` and exits 0. The full `make all` gate is run by the
   lead.
+- End-to-end acceptance (2026-09-16 13:30Z): in a throwaway clone of
+  `actix-v2a`, `uvx --from
+  "git+https://github.com/leynos/typos-config-builder.git@v0.1.0"
+  typos-config-builder gate --repository .` completed in 21 seconds. It
+  reported `refreshed: typos.toml`, ran Typos over tracked Markdown and
+  the phrase check, and exited 2 with seven findings, all inline-code
+  spans, for example a backticked `NO_COLOR`.
 
 ## Idempotence and recovery
 
@@ -858,3 +900,23 @@ Runtime dependencies: `cyclopts`, `pathspec`, `typos`.
   already declared version `0.1.0`, so it was left unchanged. Test porting
   from the forks and the `v0.1.0` tag remain outstanding for the rest of
   EP-M6.
+- 2026-09-16 13:50Z: EP-M6 finished and EP-M7 completed; EP-M8 started.
+  PR `leynos/typos-config-builder#69` squash-merged as `4525961` after
+  three review rounds, tag `v0.1.0` was pushed on `4525961`, and the
+  Release Wheels workflow succeeded. PR
+  `leynos/agent-helper-scripts#152` squash-merged as `64bd9ce`, adding
+  the two bounded style-guide masks, docs pointing consumers at `gate`,
+  tests for the masks, and a `v0.3.0` migration guide entry. Pilot
+  migration PRs for `actix-v2a` and `mriya` are under way for EP-M8. An
+  end-to-end run against `v0.1.0` in a throwaway `actix-v2a` clone
+  confirmed the gate refreshes `typos.toml`, runs Typos and the phrase
+  check, and exits 2 on real inline-code findings. Two decisions were
+  recorded: consumer migrations keep each repository's current
+  inline-code behaviour pending the owner's ruling on a shared
+  inline-code mask, and both PRs merged on green required checks with
+  reviewer threads resolved despite a stale changes-requested decision
+  from an earlier head, because branch rulesets require only status
+  checks. The GitHub Actions runner pool was saturated on the morning of
+  2026-09-16, so watching moved from continuous polling to scheduled
+  wakeups after background watcher shells were killed for memory
+  pressure.
