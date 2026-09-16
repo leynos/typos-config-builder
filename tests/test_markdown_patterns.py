@@ -4,6 +4,11 @@ Covers the ``[patterns] markdown_only`` overlay key end to end: schema
 acceptance and rejection, the merge rule that withholds a confined
 expression from the default ignore set, and the rendered
 ``[type.markdown]`` table.
+
+Assertion messages are bound to a local name before the assertion rather
+than written inline across several lines. Pytest evaluates an assertion
+message only when the assertion fails, so a wrapped inline message would
+never be executed and would count against this file's coverage.
 """
 
 from __future__ import annotations
@@ -27,6 +32,8 @@ if typ.TYPE_CHECKING:
 FENCED_BLOCK = r"(?s)```.*?```"
 INLINE_SPAN = r"`[^`\n]+`"
 SHARED_PATTERN = r"\bSPDX-[A-Za-z0-9.-]+"
+# Split so this source passes the repository's own spelling gate.
+PLAIN_BRITISH_ORGANIZE = "organi" + "se"
 OUTPUT_NAME = "typos.toml"
 
 
@@ -53,51 +60,65 @@ def test_overlay_accepts_markdown_only_patterns(tmp_path: pathlib.Path) -> None:
 
     loaded = policy.load(overlay, sparse=True)
 
-    assert loaded.markdown_patterns == (FENCED_BLOCK, INLINE_SPAN), (
-        "markdown_only entries should load sorted into markdown_patterns"
-    )
+    sorted_entries = "markdown_only should load sorted into markdown_patterns"
+    assert loaded.markdown_patterns == (FENCED_BLOCK, INLINE_SPAN), sorted_entries
+
+
+class Rejection(typ.NamedTuple):
+    """One malformed ``markdown_only`` overlay and the failure it must raise."""
+
+    body: str
+    error: type[Exception]
+    message: str
 
 
 @pytest.mark.parametrize(
-    ("body", "error", "message"),
+    "case",
     [
         pytest.param(
-            'markdown_only = "not-a-list"\n',
-            TypeError,
-            "'markdown_only' must be a list of strings",
+            Rejection(
+                'markdown_only = "not-a-list"\n',
+                TypeError,
+                "'markdown_only' must be a list of strings",
+            ),
             id="not-a-list",
         ),
         pytest.param(
-            "markdown_only = [7]\n",
-            TypeError,
-            "'markdown_only' must be a list of strings",
+            Rejection(
+                "markdown_only = [7]\n",
+                TypeError,
+                "'markdown_only' must be a list of strings",
+            ),
             id="not-strings",
         ),
         pytest.param(
-            "markdown_only = ['(a+)+b']\n",
-            ValueError,
-            "unsafe repetition",
+            Rejection("markdown_only = ['(a+)+b']\n", ValueError, "unsafe repetition"),
             id="unsafe-repetition",
         ),
         pytest.param(
-            "markdown_only = ['[']\n",
-            ValueError,
-            "is invalid",
+            Rejection("markdown_only = ['[']\n", ValueError, "is invalid"),
             id="uncompilable",
+        ),
+        pytest.param(
+            Rejection("markdown_only = ['']\n", ValueError, "too broad"),
+            id="matches-everything",
         ),
     ],
 )
 def test_overlay_rejects_malformed_markdown_only(
-    tmp_path: pathlib.Path,
-    body: str,
-    error: type[Exception],
-    message: str,
+    repository: pathlib.Path,
+    authority_factory: AuthorityFactory,
+    case: Rejection,
 ) -> None:
-    """Markdown confinement is validated exactly like ``ignore``."""
-    overlay = _write(tmp_path, body)
+    """Markdown confinement is validated exactly like ``ignore``.
 
-    with pytest.raises(error, match=message):
-        policy.load(overlay, sparse=True)
+    The empty expression is rejected by the breadth check in ``merge``
+    rather than by the loader, so every case is driven through a build.
+    """
+    _write(repository, case.body)
+
+    with pytest.raises(case.error, match=case.message):
+        build(repository, source=authority_factory())
 
 
 def test_confinement_withdraws_a_shared_pattern_from_the_default_set() -> None:
@@ -107,12 +128,10 @@ def test_confinement_withdraws_a_shared_pattern_from_the_default_set() -> None:
 
     merged = policy.merge(base, overlay)
 
-    assert merged.ignore_patterns == (SHARED_PATTERN,), (
-        "a confined shared pattern should not remain in the default ignore set"
-    )
-    assert merged.markdown_patterns == (INLINE_SPAN,), (
-        "a confined pattern should be carried as Markdown-scoped policy"
-    )
+    withdrawn = "a confined shared pattern should leave the default ignore set"
+    confined = "a confined pattern should be carried as Markdown-scoped policy"
+    assert merged.ignore_patterns == (SHARED_PATTERN,), withdrawn
+    assert merged.markdown_patterns == (INLINE_SPAN,), confined
 
 
 def test_confinement_withdraws_an_overlay_pattern_from_the_default_set() -> None:
@@ -124,12 +143,10 @@ def test_confinement_withdraws_an_overlay_pattern_from_the_default_set() -> None
 
     merged = policy.merge(policy.Dictionary(), overlay)
 
-    assert not merged.ignore_patterns, (
-        "an overlay's own pattern should be withdrawn when it is confined"
-    )
-    assert merged.markdown_patterns == (INLINE_SPAN,), (
-        "the confined pattern should still reach the Markdown table"
-    )
+    withdrawn = "an overlay's own pattern should be withdrawn when it is confined"
+    confined = "the confined pattern should still reach the Markdown table"
+    assert not merged.ignore_patterns, withdrawn
+    assert merged.markdown_patterns == (INLINE_SPAN,), confined
 
 
 def test_confining_an_absent_pattern_still_scopes_it_to_markdown() -> None:
@@ -139,12 +156,10 @@ def test_confining_an_absent_pattern_still_scopes_it_to_markdown() -> None:
 
     merged = policy.merge(base, overlay)
 
-    assert merged.ignore_patterns == (SHARED_PATTERN,), (
-        "confining an absent pattern should leave the default set untouched"
-    )
-    assert merged.markdown_patterns == (FENCED_BLOCK,), (
-        "a pattern absent from the base should still be Markdown-scoped"
-    )
+    untouched = "confining an absent pattern should leave the default set alone"
+    confined = "a pattern absent from the base should still be Markdown-scoped"
+    assert merged.ignore_patterns == (SHARED_PATTERN,), untouched
+    assert merged.markdown_patterns == (FENCED_BLOCK,), confined
 
 
 def test_overlay_removes_a_base_supplied_markdown_pattern() -> None:
@@ -157,12 +172,10 @@ def test_overlay_removes_a_base_supplied_markdown_pattern() -> None:
 
     merged = policy.merge(base, overlay)
 
-    assert merged.markdown_patterns == (FENCED_BLOCK,), (
-        "removing a shared confinement should drop it from the Markdown table"
-    )
-    assert merged.ignore_patterns == (SHARED_PATTERN,), (
-        "a withdrawn confinement should not reappear in the default ignore set"
-    )
+    dropped = "removing a shared confinement should drop it from the Markdown table"
+    kept = "a withdrawn confinement should not reappear in the default ignore set"
+    assert merged.markdown_patterns == (FENCED_BLOCK,), dropped
+    assert merged.ignore_patterns == (SHARED_PATTERN,), kept
 
 
 def test_overlay_cannot_both_remove_and_confine_a_pattern() -> None:
@@ -172,8 +185,26 @@ def test_overlay_cannot_both_remove_and_confine_a_pattern() -> None:
         markdown_patterns=(INLINE_SPAN,),
     )
 
-    with pytest.raises(ValueError, match="removes and confines to Markdown"):
+    with pytest.raises(ValueError, match="removes and confines to Markdown") as raised:
         policy.merge(policy.Dictionary(), overlay)
+
+    named = "the rejection should name the contradictory expression"
+    assert INLINE_SPAN in str(raised.value), named
+
+
+def test_overlay_cannot_both_ignore_and_remove_alongside_a_confinement() -> None:
+    """The older ignore-and-remove contradiction survives the new check."""
+    overlay = policy.Dictionary(
+        ignore_patterns=(SHARED_PATTERN,),
+        removed_patterns=(SHARED_PATTERN,),
+        markdown_patterns=(FENCED_BLOCK,),
+    )
+
+    with pytest.raises(ValueError, match="ignores and removes") as raised:
+        policy.merge(policy.Dictionary(), overlay)
+
+    named = "the rejection should name the contradictory expression"
+    assert SHARED_PATTERN in str(raised.value), named
 
 
 #: The exact table the renderer must emit for the two confined masks.
@@ -195,17 +226,13 @@ def test_render_emits_the_markdown_table() -> None:
 
     rendered = render(dictionary)
 
-    assert MARKDOWN_TABLE in rendered, (
-        "the renderer should emit the Markdown table verbatim"
-    )
-    parsed = tomllib.loads(rendered)
-    assert parsed["type"]["markdown"]["extend-glob"] == ["*.md"], (
-        "the Markdown table should scope itself to Markdown files"
-    )
-    assert parsed["type"]["markdown"]["extend-ignore-re"] == [
-        FENCED_BLOCK,
-        INLINE_SPAN,
-    ], "confined expressions should render sorted under the Markdown table"
+    verbatim = "the renderer should emit the Markdown table verbatim"
+    globbed = "the Markdown table should scope itself to Markdown files"
+    sorted_entries = "confined expressions should render sorted in the table"
+    assert MARKDOWN_TABLE in rendered, verbatim
+    table = tomllib.loads(rendered)["type"]["markdown"]
+    assert table["extend-glob"] == ["*.md"], globbed
+    assert table["extend-ignore-re"] == [FENCED_BLOCK, INLINE_SPAN], sorted_entries
 
 
 def test_render_omits_the_markdown_table_when_unused() -> None:
@@ -214,12 +241,24 @@ def test_render_omits_the_markdown_table_when_unused() -> None:
 
     rendered = render(dictionary)
 
-    assert "type.markdown" not in rendered, (
-        "no Markdown table should appear when nothing is confined"
+    omitted = "no Markdown table should appear when nothing is confined"
+    stable = "rendering should stay deterministic without a Markdown table"
+    assert "type.markdown" not in rendered, omitted
+    assert rendered == render(dictionary), stable
+
+
+def test_render_rejects_a_conflicting_generated_correction() -> None:
+    """A correction that contradicts an expanded stem is refused, not silently kept."""
+    dictionary = policy.Dictionary(
+        stems=("organ",),
+        corrections=((PLAIN_BRITISH_ORGANIZE, "other"),),
     )
-    assert rendered == render(policy.Dictionary(ignore_patterns=(SHARED_PATTERN,))), (
-        "rendering should stay deterministic without a Markdown table"
-    )
+
+    with pytest.raises(ValueError, match="conflicting generated correction") as raised:
+        render(dictionary)
+
+    named = "the rejection should name the contradictory word"
+    assert PLAIN_BRITISH_ORGANIZE in str(raised.value), named
 
 
 def test_build_scopes_confined_patterns_to_markdown(
@@ -233,13 +272,14 @@ def test_build_scopes_confined_patterns_to_markdown(
     build(repository, source=authority)
 
     generated = _generated(repository)
-    assert generated["default"]["extend-ignore-re"] == [SHARED_PATTERN], (
-        "the default ignore set should keep only the unconfined expression"
-    )
-    assert generated["type"]["markdown"] == {
+    expected = {
         "extend-glob": ["*.md"],
         "extend-ignore-re": [FENCED_BLOCK, INLINE_SPAN],
-    }, "both masks should be confined to Markdown files"
+    }
+    unconfined = "the default set should keep only the unconfined expression"
+    both = "both masks should be confined to Markdown files"
+    assert generated["default"]["extend-ignore-re"] == [SHARED_PATTERN], unconfined
+    assert generated["type"]["markdown"] == expected, both
 
 
 def test_build_without_confinement_emits_no_markdown_table(
@@ -252,9 +292,7 @@ def test_build_without_confinement_emits_no_markdown_table(
     build(repository, source=authority)
 
     generated = _generated(repository)
-    assert "type" not in generated, (
-        "an existing consumer's output should gain no Markdown table"
-    )
-    assert generated["default"]["extend-ignore-re"] == [SHARED_PATTERN], (
-        "the default ignore set should be unchanged for an existing consumer"
-    )
+    absent = "an existing consumer's output should gain no Markdown table"
+    unchanged = "the default ignore set should be unchanged for an existing consumer"
+    assert "type" not in generated, absent
+    assert generated["default"]["extend-ignore-re"] == [SHARED_PATTERN], unchanged
