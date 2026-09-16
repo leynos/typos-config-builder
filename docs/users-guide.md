@@ -208,9 +208,11 @@ normalized order. Generation sorts every policy list, so a re-inclusion such as
 `!README.md` is ordered before the `*.md` it was written to qualify and has no
 effect. Express exclusions without relying on re-inclusion.
 
-The check fails closed. A tracked file that cannot be read, or that is not
-valid UTF-8, is an error rather than a silent skip, because a skipped file is
-exactly the one most likely to have drifted. Tracked symlinks are skipped so
+A tracked file whose bytes are not valid UTF-8 is treated as binary and
+skipped, so a tracked image, font, archive, or compiled artefact does not fail
+the gate. The check still fails closed on a tracked file that cannot be read at
+all, because that means the worktree changed under the scan and a skipped file
+is exactly the one most likely to have drifted. Tracked symlinks are skipped so
 the scan cannot follow a link out of the repository.
 
 Exit codes are:

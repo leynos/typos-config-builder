@@ -5,13 +5,19 @@ matching phrases within that text: it deals with Git enumeration, policy
 documents, symlinks, submodule gitlinks, and the worktree boundary. Keeping it
 here leaves :mod:`typos_config_builder.phrases` to the matching itself.
 
-Selection fails closed: a tracked file that cannot be read or decoded raises
-rather than being skipped, because a silent skip hides exactly the files most
-likely to have drifted.
+Content that is not valid UTF-8 is binary as far as a phrase check is
+concerned, so it is skipped with a bounded diagnostic. Selection still fails
+closed on a read error, which means the worktree changed under the scan or an
+entry cannot be opened, because a silent skip there hides exactly the files
+most likely to have drifted.
+
+Diagnostics expose only bounded decisions; tracked paths and file contents are
+deliberately excluded from logs.
 """
 
 from __future__ import annotations
 
+import logging
 import pathlib
 import shutil
 
@@ -24,6 +30,8 @@ from typos_config_builder import builder
 
 if typ.TYPE_CHECKING:
     import collections.abc as cabc
+
+LOGGER = logging.getLogger(__name__)
 
 #: Index mode Git records for a submodule gitlink. A gitlink names a commit in
 #: another repository rather than tracked text, so no stage may submit it.
@@ -40,7 +48,7 @@ POLICY_PATHS = frozenset({
 
 
 class PhraseScanError(Exception):
-    """Report that a tracked file could not be read or decoded.
+    """Report that a tracked file could not be read.
 
     Attributes
     ----------
@@ -54,7 +62,7 @@ class PhraseScanError(Exception):
         Parameters
         ----------
         path
-            Repository-relative path that could not be read or decoded.
+            Repository-relative path that could not be read.
         """
         self.path = path
         super().__init__(f"tracked file could not be scanned: {path}")
@@ -210,8 +218,13 @@ def select_scannable(
     )
 
 
-def read_tracked_text(path: pathlib.Path, relative: pathlib.Path) -> str:
-    r"""Read tracked UTF-8 text, failing closed on any read or decode error.
+def read_tracked_text(path: pathlib.Path, relative: pathlib.Path) -> str | None:
+    r"""Read tracked UTF-8 text, reporting binary content as absent.
+
+    Repositories track images, fonts, archives, and compiled artefacts. Such
+    content carries no prose for a phrase check to examine, so it is skipped
+    rather than failing the scan. A read error is a different matter: the
+    worktree has changed under the scan, which must fail closed.
 
     Parameters
     ----------
@@ -222,22 +235,36 @@ def read_tracked_text(path: pathlib.Path, relative: pathlib.Path) -> str:
 
     Returns
     -------
-    str
-        Decoded file contents.
+    str | None
+        Decoded file contents, or None when the bytes are not UTF-8.
 
     Raises
     ------
     PhraseScanError
-        If the file cannot be read or decoded as UTF-8.
+        If the file cannot be read.
 
     Examples
     --------
     >>> read_tracked_text(  # doctest: +SKIP
     ...     pathlib.Path("/repo/README.md"), pathlib.Path("README.md")
     ... )
-    '# Project\\n'
+    '# Project\n'
+    >>> read_tracked_text(  # doctest: +SKIP
+    ...     pathlib.Path("/repo/logo.png"), pathlib.Path("logo.png")
+    ... ) is None
+    True
     """
     try:
         return path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError) as error:
+    except UnicodeDecodeError:
+        LOGGER.debug(
+            "Phrase scan skipped a tracked file",
+            extra={
+                "operation": "phrase-scan",
+                "decision": "skipped-binary",
+                "error_class": "not-utf-8",
+            },
+        )
+        return None
+    except OSError as error:
         raise PhraseScanError(relative) from error

@@ -153,7 +153,18 @@ to R14 are the requirement identifiers used below.
 - [ ] EP-M8 cohort A consumers (28 repos). (2026-09-16 13:00Z) Started:
   pilot PRs for `actix-v2a` (the baseline copy) and `mriya` (the most divergent
   variant) are in progress; the remaining 26 repositories follow once the pilot
-  recipe proves out.
+  recipe proves out. (2026-09-16 14:35Z) Wave 1 (byte-identical baseline copies
+  plus the two pilots) has eight PRs open, all re-pinned to `v0.1.1`:
+  `actix-v2a#88`, `mriya#88`, `catnap#65`, `ytmusic-wasm#36`, `rentaneko#45`,
+  `agentland#59`, `rustxt#68`, `chutoro#270`. Wave 2 has opened `comenq#172`,
+  `podbot#174`, `dakar#18`, `axinite#378`, with mxd, falcon-correlate,
+  falcon-pachinko, tei-rapporteur, pg-embed-setup-unpriv, shared-actions,
+  skyjoust and spycatcher-harness in progress and eight more to follow
+  (wildside, repovec-appliance, rstest-bdd, wildside-engine, stilyagi,
+  whitaker, wireframe, zamburak). The two pilots are under CodeRabbit review;
+  byte-identical replicas merge on green once the pilot review is clean, per
+  the estate rule for mechanical PRs, and their queue entries were withdrawn to
+  free the shared review seat.
 - [ ] EP-M9 cohort B1 consumers (22 repos).
 - [ ] EP-M10 templates and cohort B2 (2 templates, 7 repos).
 - [ ] EP-M11 cohort B3 consumers (7 repos).
@@ -200,9 +211,19 @@ to R14 are the requirement identifiers used below.
   gitignore re-inclusion such as `!README.md` is ordered before the `*.md` it
   was written to qualify. Gitignore gives the last matching pattern priority,
   so the re-inclusion is inert, both in `check-phrases` and in the generated
-  `extend-exclude` that Typos itself reads. Response: EP-M4 mirrors the
-  generated configuration rather than inventing a different order, so the gate
-  and Typos agree. The behaviour is documented in the users' guide and pinned by
+  `extend-exclude` that Typos itself reads.
+- Observation: the first cohort A migration to carry a tracked binary,
+  `chutoro` with an ELF executable at its repository root, failed the gate with
+  `tracked file could not be scanned: check-f64`. The fail-closed rule adopted
+  on 2026-09-14 covered undecodable text as well as unreadable files, so any
+  repository tracking an image, PDF, font, or wheel would have failed the same
+  way on its first run. Response: released as 0.1.1. Non-UTF-8 tracked content
+  is now skipped as binary with one bounded diagnostic, and the scan fails
+  closed only on a read error, which is a genuine worktree anomaly. That
+  matches the line the origin's ADR 003 already drew. Response: EP-M4 mirrors
+  the generated configuration rather than inventing a different order, so the
+  gate and Typos agree. The behaviour is documented in the users' guide and
+  pinned by
   `tests/test_phrases.py::test_excluded_globs_apply_in_normalized_order`.
   Implication: this predates EP-M4 and affects every consumer that wrote a
   re-inclusion. Preserving author order would change rendered output and so
@@ -272,6 +293,29 @@ to R14 are the requirement identifiers used below.
   of 2026-09-16, queueing PR `#69`'s CI for over ten minutes per run, and
   background watcher shells were killed for memory pressure during the wait.
   Response: pacing moved from continuous watching to scheduled wakeups.
+- Observation: `agentland`'s overlay was not clean, contrary to the sweep
+  audit's claim; both style-guide patterns were present. Response: both
+  patterns were removed as part of `agentland`'s migration PR.
+- Observation: the sweep audit's documentation line numbers were stale in
+  several repositories (`catnap`, `chutoro`, `axinite`). Response: journeymen
+  located the relevant sections by content instead of relying on the audit's
+  line numbers.
+- Observation: the whole-tree scope of a migration PR surfaced a
+  pre-existing finding on `mxd`'s `main`, a `FORCE_COLOR` reference in a
+  Makefile line merged in `7488f36`. Response: resolved with an anchored
+  overlay pattern placed beside the existing `CARGO_TERM_COLOR` one.
+- Observation: `chutoro` carried an unreferenced 3.9 MB ELF binary,
+  `check-f64`, at its repository root. Response: deleted in its migration PR.
+- Observation: `comenq`'s overlay excluded a file that no longer existed.
+  Response: the stale entry was dropped in its migration PR.
+- Observation: `RUSTSEC-2026-0285` (`rustls` below `0.23.45`) fails
+  `cargo audit` in fourteen Rust consumers independently of this work:
+  `chutoro`, `repovec-appliance`, `whitaker`, `spycatcher-harness`, `wildside`,
+  `pg-embed-setup-unpriv`, `podbot`, `rustxt`, `mxd`, `wildside-engine`,
+  `wireframe`, `mriya`, `axinite` and `comenq` (the last three also carry
+  `0.21` or `0.22` lines outside the advisory's fixed range). `rentaneko`'s CI
+  failed on it. Response: repaired by a lockfile-only PR, `rentaneko#46`
+  (merged), with `main` merged into the migration branch.
 
 ## Decision log
 
@@ -295,6 +339,13 @@ to R14 are the requirement identifiers used below.
   union of the fourteen consumer variants minus framework choices; fail-open
   hid errors and three repositories had already moved to fail-closed.
   Date/Author: 2026-09-14, lead session.
+- Decision: the phrase scan skips tracked files that are not UTF-8 as binary
+  and fails closed only on read errors, replacing the 2026-09-14 lead-session
+  decision to fail closed on undecodable text. Rationale: the first cohort A
+  migration with a tracked binary (chutoro, an ELF at the root) failed the
+  gate; every repository with a tracked image or archive would. The origin's
+  ADR 003 already drew the line at non-UTF-8 content. Date/Author: 2026-09-16,
+  lead session.
 - Decision: `gate` runs the builder in write mode, never `--check`.
   Rationale: with a live authority a tracked `typos.toml` checked in CI would
   fail in every consumer on every dictionary edit. Date/Author: 2026-09-14,
@@ -340,6 +391,15 @@ to R14 are the requirement identifiers used below.
   a stale changes-requested decision from the first head. Rationale: every
   finding had an evidence-backed disposition and the reviewer had re-read the
   final heads. Date/Author: 2026-09-16, lead session.
+- Decision: the rustls advisory (`RUSTSEC-2026-0285`) is repaired per
+  repository as a separate lockfile-only PR only where it blocks a migration
+  PR; the remaining repositories are left to Dependabot's cargo updates and
+  reported to the owner. Rationale: it is estate dependency hygiene outside
+  this plan's scope, but a red required check blocks merging on green.
+  Date/Author: 2026-09-16, lead session.
+- Decision: consumer PRs keep `--python 3.14` on the `uv` invocation
+  where the previous builder invocation had it, since the builder requires
+  Python 3.14. Date/Author: 2026-09-16, lead session.
 
 ## Outcomes & retrospective
 
@@ -450,10 +510,12 @@ Invariants introduced or preserved:
 - INV-5 Phrase gate boundaries: a phrase is reported only when not adjacent
   to a word character or hyphen on either side, case-insensitively. Method:
   Hypothesis property over generated neighbour characters.
-- INV-6 Fail closed: an unreadable or undecodable tracked file, or a `git`
-  failure, makes the gate exit non-zero with an error, never exit 0. Method:
-  parameterized tests with a deleted tracked file, a non-UTF-8 file, and a
-  failing `git`.
+- INV-6 Fail closed on read errors, skip binary: an unreadable tracked file
+  or a `git` failure makes the gate exit non-zero with an error, never exit 0,
+  while a tracked file whose bytes are not UTF-8 is skipped as binary with one
+  bounded diagnostic and no finding. Method: parameterized tests with a deleted
+  tracked file and a failing `git`, plus a non-UTF-8 file asserted to produce
+  no finding while a decodable sibling in the same repository is still reported.
 - INV-7 Gate ordering: `gate` renders before running Typos, and runs the
   phrase check even when Typos reports findings, returning non-zero if any
   stage fails. Method: unit tests with an injected Typos runner recording call
@@ -895,3 +957,15 @@ Runtime dependencies: `cyclopts`, `pathspec`, `typos`.
   the morning of 2026-09-16, so watching moved from continuous polling to
   scheduled wakeups after background watcher shells were killed for memory
   pressure.
+- 2026-09-16 14:35Z: EP-M8 wave 1 (eight PRs, byte-identical baseline
+  copies plus the two pilots) and wave 2 (four PRs open, twelve more in
+  progress or queued) are under way, all re-pinned to `v0.1.1`. `agentland`'s
+  overlay was not clean, stale documentation line numbers were located by
+  content in three repositories, a pre-existing `FORCE_COLOR` finding on `mxd`'s
+  `main` was fixed with an anchored overlay pattern, `chutoro`'s unreferenced
+  ELF binary was deleted, and `comenq`'s stale overlay entry was dropped.
+  Fourteen Rust consumers independently fail `cargo audit` on
+  `RUSTSEC-2026-0285`; `rentaneko#46` repaired the one instance blocking a
+  migration PR, and the remaining repositories are reported to the owner for
+  Dependabot to handle. Two decisions were recorded: the scope of the
+  rustls-advisory repair, and keeping `--python 3.14` on the `uv` invocation.
