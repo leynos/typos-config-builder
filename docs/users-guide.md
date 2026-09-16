@@ -114,6 +114,48 @@ retires a pattern. Listing the same expression under both `ignore` and
 `remove` is contradictory and is rejected. Withdrawals are policy metadata:
 they are never rendered into the generated configuration.
 
+### Confine an ignore pattern to Markdown
+
+Some repositories want a mask to apply to prose but not to code. List those
+expressions under `[patterns] markdown_only` in `typos.local.toml`:
+
+```toml
+schema = 1
+
+[patterns]
+markdown_only = ['`[^`\n]+`', '(?s)```.*?```']
+```
+
+Each listed expression is withheld from the merged `[default]` ignore set,
+whether the shared dictionary or the local `ignore` list supplied it, and is
+rendered under a Markdown-scoped table instead:
+
+```toml
+[type.markdown]
+extend-glob = [
+    "*.md",
+]
+extend-ignore-re = [
+    "(?s)```.*?```",
+    "`[^`\n]+`",
+]
+```
+
+The example above is cuprum's case. Its architecture decision record 009
+requires Oxford spelling in source identifiers, so masking inline code spans
+and fenced blocks everywhere would let a misspelled identifier through.
+Under `markdown_only` the two masks relax the documentation checks alone,
+and Rust source is still checked in full.
+
+An expression does not have to exist in the shared dictionary to be confined:
+listing one that is absent simply scopes it to Markdown. Entries are
+validated for regex safety exactly like `ignore` entries. Listing the same
+expression under both `remove` and `markdown_only` is contradictory and is
+rejected.
+
+The `[type.markdown]` table is omitted entirely when the list is empty, so a
+repository that does not use the key generates byte-identical output.
+
 ## Generate configuration
 
 Run the command without `--check` to refresh the cache, merge the local

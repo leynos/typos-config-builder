@@ -85,6 +85,13 @@ valid cache exists and the authority cannot be reached.
 - `[patterns] remove` lets a repository withdraw a specific shared ignore
   expression from its overlay, by exact expression text, without weakening
   the shared policy for anything else.
+- `[patterns] markdown_only` confines an ignore expression to Markdown. A
+  repository whose legacy generated `typos.toml` carried a `[type.markdown]`
+  table should list that table's `extend-ignore-re` entries under
+  `markdown_only` in `typos.local.toml`; the builder then withholds them from
+  `[default]` and regenerates the same table. Repositories that never had
+  such a table need no change, because the table is omitted when the list is
+  empty.
 - Optional regex groups are accepted in ignore expressions.
 - HTTP 429 is treated as a transient authority error, the same as the 500,
   502, 503, and 504 statuses: a valid cache is kept and the run reports

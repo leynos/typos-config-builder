@@ -177,6 +177,16 @@ R1 to R14 are the requirement identifiers used below.
 - [ ] EP-M9 cohort B1 consumers (22 repos).
 - [ ] EP-M10 templates and cohort B2 (2 templates, 7 repos).
 - [ ] EP-M11 cohort B3 consumers (7 repos).
+  (2026-09-16) Builder prerequisite delivered: the `[patterns] markdown_only`
+  overlay key confines an ignore expression to Markdown. `policy.merge`
+  subtracts the merged Markdown set from the unioned default ignore set and
+  `render.py` emits a `[type.markdown]` table with an `extend-glob` of
+  `*.md`, omitting the table when nothing is confined.
+  `tests/test_markdown_patterns.py` covers schema acceptance and rejection,
+  the three merge cases, both rendering cases, and two build-level cases.
+  Cohort B3's cuprum needs this because its ADR 009 requires Oxford spelling
+  in source identifiers, so the inline-code and fenced-block masks must not
+  apply outside documentation.
 - [ ] EP-M12 retire the origin's generator.
 
 ## Surprises & discoveries
@@ -384,6 +394,27 @@ R1 to R14 are the requirement identifiers used below.
   shared policy retired a pattern, which is precisely when the overlay is
   least able to respond.
   Date/Author: 2026-09-15, EP-M3 implementation.
+
+- Decision: a Markdown-scoped ignore expression is expressed as a third
+  overlay fate, `[patterns] markdown_only`, rather than as a general
+  type-scoped table syntax. Listing the same expression under both `remove`
+  and `markdown_only` is rejected, because withdrawing and confining it are
+  contradictory intentions.
+  Rationale: the origin's generator hard-coded exactly two Markdown masks,
+  and cohort B3's cuprum needs those two and no others. A general `[type.*]`
+  schema would add rendering surface with no consumer, while the single list
+  keeps the merge rule to one set subtraction and leaves every existing
+  consumer's output byte-identical.
+  Date/Author: 2026-09-16, EP-M11 preparation.
+
+- Decision: the phrase scan keeps using the merged default ignore set only,
+  so a Markdown-confined expression does not mask text for `check-phrases`.
+  Rationale: `phrases.py` masks every tracked file with one pattern set and
+  has no file-type dispatch. Applying a Markdown mask to Rust or Python
+  sources would be wrong, and adding type dispatch to the phrase scan is a
+  separate change with its own tests. The exposure is small: phrase
+  corrections are prose phrases, which rarely appear inside fenced code.
+  Date/Author: 2026-09-16, EP-M11 preparation.
 
 - Decision: the inline-code ignore pattern is not pushed upstream in EP-M7.
   Rationale: the origin's own tests and users' guide assert that inline code
