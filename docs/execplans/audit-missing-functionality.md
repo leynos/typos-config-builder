@@ -161,6 +161,19 @@ R1 to R14 are the requirement identifiers used below.
   pilot PRs for `actix-v2a` (the baseline copy) and `mriya` (the most
   divergent variant) are in progress; the remaining 26 repositories
   follow once the pilot recipe proves out.
+  (2026-09-16 14:35Z) Wave 1 (byte-identical baseline copies plus the
+  two pilots) has eight PRs open, all re-pinned to `v0.1.1`:
+  `actix-v2a#88`, `mriya#88`, `catnap#65`, `ytmusic-wasm#36`,
+  `rentaneko#45`, `agentland#59`, `rustxt#68`, `chutoro#270`. Wave 2
+  has opened `comenq#172`, `podbot#174`, `dakar#18`, `axinite#378`,
+  with mxd, falcon-correlate, falcon-pachinko, tei-rapporteur,
+  pg-embed-setup-unpriv, shared-actions, skyjoust and
+  spycatcher-harness in progress and eight more to follow (wildside,
+  repovec-appliance, rstest-bdd, wildside-engine, stilyagi, whitaker,
+  wireframe, zamburak). The two pilots are under CodeRabbit review;
+  byte-identical replicas merge on green once the pilot review is
+  clean, per the estate rule for mechanical PRs, and their queue
+  entries were withdrawn to free the shared review seat.
 - [ ] EP-M9 cohort B1 consumers (22 repos).
 - [ ] EP-M10 templates and cohort B2 (2 templates, 7 repos).
 - [ ] EP-M11 cohort B3 consumers (7 repos).
@@ -291,6 +304,33 @@ R1 to R14 are the requirement identifiers used below.
   background watcher shells were killed for memory pressure during the
   wait.
   Response: pacing moved from continuous watching to scheduled wakeups.
+- Observation: `agentland`'s overlay was not clean, contrary to the sweep
+  audit's claim; both style-guide patterns were present.
+  Response: both patterns were removed as part of `agentland`'s
+  migration PR.
+- Observation: the sweep audit's documentation line numbers were stale in
+  several repositories (`catnap`, `chutoro`, `axinite`).
+  Response: journeymen located the relevant sections by content instead
+  of relying on the audit's line numbers.
+- Observation: the whole-tree scope of a migration PR surfaced a
+  pre-existing finding on `mxd`'s `main`, a `FORCE_COLOR` reference in a
+  Makefile line merged in `7488f36`.
+  Response: resolved with an anchored overlay pattern placed beside the
+  existing `CARGO_TERM_COLOR` one.
+- Observation: `chutoro` carried an unreferenced 3.9 MB ELF binary,
+  `check-f64`, at its repository root.
+  Response: deleted in its migration PR.
+- Observation: `comenq`'s overlay excluded a file that no longer existed.
+  Response: the stale entry was dropped in its migration PR.
+- Observation: `RUSTSEC-2026-0285` (`rustls` below `0.23.45`) fails
+  `cargo audit` in fourteen Rust consumers independently of this work:
+  `chutoro`, `repovec-appliance`, `whitaker`, `spycatcher-harness`,
+  `wildside`, `pg-embed-setup-unpriv`, `podbot`, `rustxt`, `mxd`,
+  `wildside-engine`, `wireframe`, `mriya`, `axinite` and `comenq` (the
+  last three also carry `0.21` or `0.22` lines outside the advisory's
+  fixed range). `rentaneko`'s CI failed on it.
+  Response: repaired by a lockfile-only PR, `rentaneko#46` (merged),
+  with `main` merged into the migration branch.
 
 ## Decision log
 
@@ -374,6 +414,17 @@ R1 to R14 are the requirement identifiers used below.
   green, despite a stale changes-requested decision from the first head.
   Rationale: every finding had an evidence-backed disposition and the
   reviewer had re-read the final heads.
+  Date/Author: 2026-09-16, lead session.
+- Decision: the rustls advisory (`RUSTSEC-2026-0285`) is repaired per
+  repository as a separate lockfile-only PR only where it blocks a
+  migration PR; the remaining repositories are left to Dependabot's
+  cargo updates and reported to the owner.
+  Rationale: it is estate dependency hygiene outside this plan's scope,
+  but a red required check blocks merging on green.
+  Date/Author: 2026-09-16, lead session.
+- Decision: consumer PRs keep `--python 3.14` on the `uv` invocation
+  where the previous builder invocation had it, since the builder
+  requires Python 3.14.
   Date/Author: 2026-09-16, lead session.
 
 ## Outcomes & retrospective
@@ -941,3 +992,16 @@ Runtime dependencies: `cyclopts`, `pathspec`, `typos`.
   2026-09-16, so watching moved from continuous polling to scheduled
   wakeups after background watcher shells were killed for memory
   pressure.
+- 2026-09-16 14:35Z: EP-M8 wave 1 (eight PRs, byte-identical baseline
+  copies plus the two pilots) and wave 2 (four PRs open, twelve more in
+  progress or queued) are under way, all re-pinned to `v0.1.1`.
+  `agentland`'s overlay was not clean, stale documentation line numbers
+  were located by content in three repositories, a pre-existing
+  `FORCE_COLOR` finding on `mxd`'s `main` was fixed with an anchored
+  overlay pattern, `chutoro`'s unreferenced ELF binary was deleted, and
+  `comenq`'s stale overlay entry was dropped. Fourteen Rust consumers
+  independently fail `cargo audit` on `RUSTSEC-2026-0285`; `rentaneko#46`
+  repaired the one instance blocking a migration PR, and the remaining
+  repositories are reported to the owner for Dependabot to handle. Two
+  decisions were recorded: the scope of the rustls-advisory repair, and
+  keeping `--python 3.14` on the `uv` invocation.
