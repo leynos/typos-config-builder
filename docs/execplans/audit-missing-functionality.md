@@ -150,7 +150,7 @@ to R14 are the requirement identifiers used below.
   (2026-09-16 13:00Z) PR `leynos/agent-helper-scripts#152` squash-merged as
   `64bd9ce`: two bounded style-guide masks, docs pointing consumers at `gate`,
   tests for the masks, and a `v0.3.0` migration guide entry.
-- [ ] EP-M8 cohort A consumers (28 repos). (2026-09-16 13:00Z) Started:
+- [x] EP-M8 cohort A consumers (28 repos). (2026-09-16 13:00Z) Started:
   pilot PRs for `actix-v2a` (the baseline copy) and `mriya` (the most divergent
   variant) are in progress; the remaining 26 repositories follow once the pilot
   recipe proves out. (2026-09-16 14:35Z) Wave 1 (byte-identical baseline copies
@@ -164,21 +164,42 @@ to R14 are the requirement identifiers used below.
   whitaker, wireframe, zamburak). The two pilots are under CodeRabbit review;
   byte-identical replicas merge on green once the pilot review is clean, per
   the estate rule for mechanical PRs, and their queue entries were withdrawn to
-  free the shared review seat.
-- [ ] EP-M9 cohort B1 consumers (22 repos).
-- [ ] EP-M10 templates and cohort B2 (2 templates, 7 repos).
-- [ ] EP-M11 cohort B3 consumers (7 repos).
+  free the shared review seat. (2026-09-17) Complete with three exceptions: 25
+  of the 28 repositories are merged. `frankie#112` is open on pre-existing
+  Whitaker lint errors, and `mxd#552` and `podbot#174` and `#175` are open on
+  audit and compile failures that already fail on their `main` branches. None
+  of the three is blocked by the migration itself.
+- [x] EP-M9 cohort B1 consumers (22 repos). (2026-09-17) 21 of the 22
+  repositories are merged; `corbusier#180` is open on a pre-existing
+  `bun audit` failure.
+- [ ] EP-M10 templates and cohort B2 (2 templates, 7 repos). (2026-09-17)
+  Awaiting review: the template PRs `agent-template-python#51` and
+  `agent-template-rust#90` are open under CodeRabbit review. Cohort B2 has
+  merged for `ccnag`, `df12-python-lints`, `makeutil` and `thysalion`.
+  `agent-template-rpm` was skipped by owner decision: its `main` holds only an
+  initial commit and the template content lives on the unmerged
+  `initial-template` branch, so there is nothing to migrate.
+- [x] EP-M11 cohort B3 consumers (7 repos).
   (2026-09-16) Builder prerequisite delivered: the `[patterns] markdown_only`
   overlay key confines an ignore expression to Markdown. `policy.merge`
   subtracts the merged Markdown set from the unioned default ignore set and
-  `render.py` emits a `[type.markdown]` table with an `extend-glob` of
-  `*.md`, omitting the table when nothing is confined.
-  `tests/test_markdown_patterns.py` covers schema acceptance and rejection,
-  the four merge cases, both rendering cases, and two build-level cases.
-  Cohort B3's cuprum needs this because its ADR 009 requires Oxford spelling
-  in source identifiers, so the inline-code and fenced-block masks must not
-  apply outside documentation.
-- [ ] EP-M12 retire the origin's generator.
+  `render.py` emits a `[type.markdown]` table with an `extend-glob` of `*.md`,
+  omitting the table when nothing is confined.
+  `tests/test_markdown_patterns.py` covers schema acceptance and rejection, the
+  four merge cases, both rendering cases, and two build-level cases. Cohort
+  B3's cuprum needs this because its ADR 009 requires Oxford spelling in source
+  identifiers, so the inline-code and fenced-block masks must not apply outside
+  documentation. (2026-09-17) All seven repositories are merged: `monotony`,
+  `mpsc-log`, `netsuke`, `nile-valley`, `ortho-config`, `weaver` and `cuprum`.
+  `cuprum` needed builder `v0.1.2`, which brought PR 78's
+  `[patterns] markdown_only` key, and is the only consumer that confines a
+  mask: its fenced-block one, matching the legacy `[type.markdown]` table it
+  replaced. Builder issue `#77` consolidates the legacy-only test gaps these
+  forks surfaced.
+- [ ] EP-M12 retire the origin's generator. (2026-09-17) Awaiting review: PR
+  `leynos/agent-helper-scripts#157` is open, removing 3,823 lines. The harvest
+  is kept as `scripts/oxford_form_harvest.py`, and the repository now gates
+  itself with `--source data/typos-oxendict-base.toml --scope all`.
 
 ## Surprises & discoveries
 
@@ -326,6 +347,48 @@ to R14 are the requirement identifiers used below.
   `0.21` or `0.22` lines outside the advisory's fixed range). `rentaneko`'s CI
   failed on it. Response: repaired by a lockfile-only PR, `rentaneko#46`
   (merged), with `main` merged into the migration branch.
+- Observation: CodeScene CLI `1.0.103`, published on 2026-09-16 at 11:26 UTC
+  as "latest", fails to parse cobertura coverage with
+  `No matching field found: close for class java.io.InputStreamReader`, and no
+  older build is downloadable. Repositories uploading lcov are unaffected.
+  Response: the owner ruled that a PR blocked solely on that step merges with
+  an administrative bypass once every other step is verified green. A separate
+  agent owns the repair; it is not in this plan's scope.
+- Observation: continuous integration that exports `UV_PYTHON` at a version
+  below 3.14 selects that interpreter for `uv tool run`, so the builder refuses
+  to start. Response: `--python 3.14` was added after `uv tool run` in
+  `lag-complexity`, `mapsplice` and `weaver`, extending the 2026-09-16 decision
+  from repositories that already carried the flag to those whose environment
+  forces an older interpreter.
+- Observation: repositories that keep uv's cache in the worktree fail
+  markdownlint after the first gate run, because the downloaded wheels carry
+  third-party `LICENSE.md` files. Response: their markdownlint configuration
+  ignores `**/.uv-cache/**` and `**/.uv-tools/**`.
+- Observation: deleting the vendored scripts can remove a repository's last
+  Python file, after which GitHub's default code-scanning setup fails its
+  Python analysis. It is not a required check, so it does not block merging.
+  Response: the language list must be patched to drop Python. The REST API
+  rejects `rust` in that list, so only `lille` could be patched
+  programmatically; `mdast-check`, `makeutil` and `frankie` need the web
+  interface and are left for the owner.
+- Observation: the phrase stage scans every tracked text file, not only
+  documentation, so the shared rule for the closed compound of "hand" and
+  "written" reported findings inside code comments and test names. `df12-www`
+  had 39 hits and `thysalion` 23, one of which was a Cucumber step that had to
+  be renamed together with its step definitions. Response: the findings were
+  fixed in the migration PRs; the breadth of the scan is the designed behaviour
+  and is documented in the users' guide.
+- Observation: contract tests that hardcode Makefile command lines, Skylos
+  whitelists, or `ty` search paths break when the vendored scripts are deleted.
+  Response: `concordat`, `dev-env-rocky` and `git-donkey` had those tests
+  updated in the same PR as the deletion.
+- Observation: PR 78's CodeRabbit round found two defects in the Markdown
+  confinement key: a `markdown_only` expression supplied by the shared base
+  could not be withdrawn by `remove`, and the feature was documented in the
+  guide shipped with `0.1.0`. Both were fixed, and
+  `docs/migration-guide-0-1-2.md` was added. The coverage ratchet then caught
+  36 never-executed assertion-message lines in the new test module; binding
+  each message before asserting made them execute.
 
 ## Decision log
 
@@ -377,42 +440,38 @@ to R14 are the requirement identifiers used below.
 
 - Decision: a Markdown-scoped ignore expression is expressed as a third
   overlay fate, `[patterns] markdown_only`, rather than as a general
-  type-scoped table syntax. Listing the same expression under both `remove`
-  and `markdown_only` is rejected, because withdrawing and confining it are
-  contradictory intentions.
-  Rationale: the origin's generator hard-coded exactly two Markdown masks,
-  and cohort B3's cuprum needs those two and no others. A general `[type.*]`
-  schema would add rendering surface with no consumer, while the single list
-  keeps the merge rule to one set subtraction and leaves every existing
-  consumer's output byte-identical.
-  Date/Author: 2026-09-16, EP-M11 preparation.
+  type-scoped table syntax. Listing the same expression under both `remove` and
+  `markdown_only` is rejected, because withdrawing and confining it are
+  contradictory intentions. Rationale: the origin's generator hard-coded
+  exactly two Markdown masks, and cohort B3's cuprum needs those two and no
+  others. A general `[type.*]` schema would add rendering surface with no
+  consumer, while the single list keeps the merge rule to one set subtraction
+  and leaves every existing consumer's output byte-identical. Date/Author:
+  2026-09-16, EP-M11 preparation.
 
 - Decision: `[patterns] remove` withdraws a Markdown-confined expression as
   well as an ignored one, but only when the shared authority supplied the
   confinement. An overlay that both confines and removes one expression is
-  still rejected.
-  Rationale: review of PR 78 found that unioning confinements without
-  subtracting withdrawals would make a shared `markdown_only` entry
+  still rejected. Rationale: review of PR 78 found that unioning confinements
+  without subtracting withdrawals would make a shared `markdown_only` entry
   permanently unwithdrawable, which contradicts the EP-M3 contract that a
-  repository may always be stricter than shared policy. Applying the plain
-  set subtraction to both tables keeps one rule for `remove` whichever table
-  supplied the expression.
-  Date/Author: 2026-09-16, PR 78 review round one.
+  repository may always be stricter than shared policy. Applying the plain set
+  subtraction to both tables keeps one rule for `remove` whichever table
+  supplied the expression. Date/Author: 2026-09-16, PR 78 review round one.
 
 - Decision: the Markdown confinement key ships in a `v0.1.2` migration guide
-  rather than in the `0.1.0` guide.
-  Rationale: `v0.1.0` and `v0.1.1` are tagged and never carried the key, so
-  documenting it in their guide would misdate the feature.
-  Date/Author: 2026-09-16, PR 78 review round one.
+  rather than in the `0.1.0` guide. Rationale: `v0.1.0` and `v0.1.1` are tagged
+  and never carried the key, so documenting it in their guide would misdate the
+  feature. Date/Author: 2026-09-16, PR 78 review round one.
 
 - Decision: the phrase scan keeps using the merged default ignore set only,
   so a Markdown-confined expression does not mask text for `check-phrases`.
-  Rationale: `phrases.py` masks every tracked file with one pattern set and
-  has no file-type dispatch. Applying a Markdown mask to Rust or Python
-  sources would be wrong, and adding type dispatch to the phrase scan is a
-  separate change with its own tests. The exposure is small: phrase
-  corrections are prose phrases, which rarely appear inside fenced code.
-  Date/Author: 2026-09-16, EP-M11 preparation.
+  Rationale: `phrases.py` masks every tracked file with one pattern set and has
+  no file-type dispatch. Applying a Markdown mask to Rust or Python sources
+  would be wrong, and adding type dispatch to the phrase scan is a separate
+  change with its own tests. The exposure is small: phrase corrections are
+  prose phrases, which rarely appear inside fenced code. Date/Author:
+  2026-09-16, EP-M11 preparation.
 
 - Decision: the inline-code ignore pattern is not pushed upstream in EP-M7.
   Rationale: the origin's own tests and users' guide assert that inline code is
@@ -449,6 +508,27 @@ to R14 are the requirement identifiers used below.
 - Decision: consumer PRs keep `--python 3.14` on the `uv` invocation
   where the previous builder invocation had it, since the builder requires
   Python 3.14. Date/Author: 2026-09-16, lead session.
+- Decision: consumers pin the builder by tag, never by commit SHA, using one
+  identical invocation line across the estate. Rationale: a tag reads as a
+  release and keeps every consumer's Makefile byte-identical, which is what
+  makes the replicas mechanical and reviewable at a glance. Tags are never
+  moved, so the pin is as reproducible as a SHA. Date/Author: 2026-09-16, lead
+  session.
+- Decision: template PRs and PRs against the builder or the origin receive a
+  CodeRabbit review before merging; mechanical consumer replicas merge on
+  green. Rationale: a template defect propagates to every repository generated
+  from it, and the builder and origin carry the shared policy, so both warrant
+  the shared review seat. A replica whose diff matches the proven recipe adds
+  no new judgement and would only queue behind work that does. Date/Author:
+  2026-09-16, lead session.
+- Decision: the inline-code mask is re-added to a repository's overlay only
+  where its committed `typos.toml` already carried the expression, determined
+  by an exact-string check that accounts for the doubled backslash in the
+  rendered file. This refines the 2026-09-16 cohort rule, which assumed cohort
+  membership predicted the behaviour. Rationale: reading the committed file is
+  decisive where the cohort label is only a proxy. The owner's ruling on
+  whether the mask belongs in the shared dictionary is still pending.
+  Date/Author: 2026-09-17, lead session.
 
 ## Outcomes & retrospective
 
@@ -1018,3 +1098,18 @@ Runtime dependencies: `cyclopts`, `pathspec`, `typos`.
   migration PR, and the remaining repositories are reported to the owner for
   Dependabot to handle. Two decisions were recorded: the scope of the
   rustls-advisory repair, and keeping `--python 3.14` on the `uv` invocation.
+- 2026-09-17: the consumer rollout completed for cohorts A, B1 and B3, and
+  EP-M10 and EP-M12 went out for review. Cohort A merged 25 of 28 repositories,
+  cohort B1 21 of 22, and cohort B3 all seven, with the open PRs blocked on
+  failures that predate this work rather than on the migration. `cuprum` drove
+  builder `v0.1.2` and PR 78's `[patterns] markdown_only` key, whose review
+  round found the withdrawal gap and the misdated documentation, and whose
+  coverage ratchet found 36 never-executed assertion messages. Builder issue
+  `#77` tracks the legacy-only test gaps the B3 forks surfaced. Five
+  estate-wide obstacles were recorded under Surprises: the CodeScene CLI
+  cobertura parse failure, `UV_PYTHON` pinning an interpreter below 3.14,
+  in-tree uv caches breaking markdownlint, default code scanning failing once
+  the last Python file is deleted, and the phrase scan reaching code comments.
+  Three decisions were recorded: tag-based pinning, the review policy for
+  templates and origin PRs against mechanical replicas, and re-adding the
+  inline-code mask by inspecting each committed `typos.toml`.
