@@ -164,21 +164,23 @@ to R14 are the requirement identifiers used below.
   whitaker, wireframe, zamburak). The two pilots are under CodeRabbit review;
   byte-identical replicas merge on green once the pilot review is clean, per
   the estate rule for mechanical PRs, and their queue entries were withdrawn to
-  free the shared review seat. (2026-09-17) Complete with three exceptions: 25
-  of the 28 repositories are merged. `frankie#112` is open on pre-existing
-  Whitaker lint errors, and `mxd#552` and `podbot#174` and `#175` are open on
-  audit and compile failures that already fail on their `main` branches. None
-  of the three is blocked by the migration itself.
-- [x] EP-M9 cohort B1 consumers (22 repos). (2026-09-17) 21 of the 22
-  repositories are merged; `corbusier#180` is open on a pre-existing
-  `bun audit` failure.
-- [ ] EP-M10 templates and cohort B2 (2 templates, 7 repos). (2026-09-17)
-  Awaiting review: the template PRs `agent-template-python#51` and
-  `agent-template-rust#90` are open under CodeRabbit review. Cohort B2 has
-  merged for `ccnag`, `df12-python-lints`, `makeutil` and `thysalion`.
-  `agent-template-rpm` was skipped by owner decision: its `main` holds only an
-  initial commit and the template content lives on the unmerged
-  `initial-template` branch, so there is nothing to migrate.
+  free the shared review seat. (2026-09-17) Complete with two exceptions: 26 of
+  the 28 repositories are merged. `mxd#552` and `podbot#174` are open on audit
+  and compile failures that already fail on their `main` branches, neither
+  caused by the migration; `podbot#175` is the lockfile-only advisory repair
+  that unblocks `#174`, following the `rentaneko#46` precedent.
+- [x] EP-M9 cohort B1 consumers (22 repos). (2026-09-17) 20 of the 22
+  repositories are merged. `corbusier#180` is open on a pre-existing
+  `bun audit` failure and `frankie#112` on pre-existing Whitaker lint errors.
+- [ ] EP-M10 templates and cohort B2 (7 repositories, of which three are
+  templates). (2026-09-17) Awaiting review: the template PRs
+  `agent-template-python#51` and `agent-template-rust#90` are open under
+  CodeRabbit review. The four remaining cohort B2 repositories have all merged:
+  `ccnag#10`, `df12-pylint-lints#25`, `makeutil#21` and `thysalion#34`. The
+  seventh repository, the `agent-template-rpm` template, was skipped by owner
+  decision: its `main` holds only an initial commit and the template content
+  lives on the unmerged `initial-template` branch, so there is nothing to
+  migrate.
 - [x] EP-M11 cohort B3 consumers (7 repos).
   (2026-09-16) Builder prerequisite delivered: the `[patterns] markdown_only`
   overlay key confines an ignore expression to Markdown. `policy.merge`
@@ -361,7 +363,7 @@ to R14 are the requirement identifiers used below.
   from repositories that already carried the flag to those whose environment
   forces an older interpreter.
 - Observation: repositories that keep uv's cache in the worktree fail
-  markdownlint after the first gate run, because the downloaded wheels carry
+  markdownlint after the first gate run because the downloaded wheels carry
   third-party `LICENSE.md` files. Response: their markdownlint configuration
   ignores `**/.uv-cache/**` and `**/.uv-tools/**`.
 - Observation: deleting the vendored scripts can remove a repository's last
@@ -441,7 +443,7 @@ to R14 are the requirement identifiers used below.
 - Decision: a Markdown-scoped ignore expression is expressed as a third
   overlay fate, `[patterns] markdown_only`, rather than as a general
   type-scoped table syntax. Listing the same expression under both `remove` and
-  `markdown_only` is rejected, because withdrawing and confining it are
+  `markdown_only` is rejected because withdrawing and confining it are
   contradictory intentions. Rationale: the origin's generator hard-coded
   exactly two Markdown masks, and cohort B3's cuprum needs those two and no
   others. A general `[type.*]` schema would add rendering surface with no
@@ -509,11 +511,18 @@ to R14 are the requirement identifiers used below.
   where the previous builder invocation had it, since the builder requires
   Python 3.14. Date/Author: 2026-09-16, lead session.
 - Decision: consumers pin the builder by tag, never by commit SHA, using one
-  identical invocation line across the estate. Rationale: a tag reads as a
-  release and keeps every consumer's Makefile byte-identical, which is what
-  makes the replicas mechanical and reviewable at a glance. Tags are never
-  moved, so the pin is as reproducible as a SHA. Date/Author: 2026-09-16, lead
-  session.
+  invocation shape across the estate that differs only in the pinned version.
+  Most consumers carry `v0.1.1`; `cuprum` carries `v0.1.2` for the Markdown
+  confinement key, so the lines are identical in shape rather than byte for
+  byte. Rationale: a tag reads as a release, and a single invocation shape is
+  what makes the replicas mechanical and reviewable at a glance. A published
+  version tag is never moved; a correction is published as a new version tag,
+  which supersedes the `Milestones and plateaus` recovery note that reads
+  "retag". Nothing yet enforces that rule: no ruleset protects `v*` against
+  deletion or force update, so the guarantee rests on practice, not on the
+  platform. Adding tag protection is an open item for the owner, and until it
+  exists a tag pin is weaker than a commit SHA pin. Date/Author: 2026-09-16,
+  lead session; immutability qualified 2026-09-17 after review.
 - Decision: template PRs and PRs against the builder or the origin receive a
   CodeRabbit review before merging; mechanical consumer replicas merge on
   green. Rationale: a template defect propagates to every repository generated
@@ -760,7 +769,8 @@ after a CodeRabbit review through comenq.
   revert; the old Makefile still works.
 - EP-M5: `gate` usable; this repository's `spelling` target is one `gate`
   call. Recovery: revert.
-- EP-M6: docs and ADR consistent; `v0.1.0` tagged. Recovery: retag.
+- EP-M6: docs and ADR consistent; `v0.1.0` tagged. Recovery: publish a new
+  version tag; a published tag is never moved.
 - EP-M7 to EP-M12: each consumer PR is its own plateau.
 
 Compatibility decision: none. The package has no release tag, so no
@@ -1099,8 +1109,8 @@ Runtime dependencies: `cyclopts`, `pathspec`, `typos`.
   Dependabot to handle. Two decisions were recorded: the scope of the
   rustls-advisory repair, and keeping `--python 3.14` on the `uv` invocation.
 - 2026-09-17: the consumer rollout completed for cohorts A, B1 and B3, and
-  EP-M10 and EP-M12 went out for review. Cohort A merged 25 of 28 repositories,
-  cohort B1 21 of 22, and cohort B3 all seven, with the open PRs blocked on
+  EP-M10 and EP-M12 went out for review. Cohort A merged 26 of 28 repositories,
+  cohort B1 20 of 22, and cohort B3 all seven, with the open PRs blocked on
   failures that predate this work rather than on the migration. `cuprum` drove
   builder `v0.1.2` and PR 78's `[patterns] markdown_only` key, whose review
   round found the withdrawal gap and the misdated documentation, and whose
