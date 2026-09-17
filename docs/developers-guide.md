@@ -131,6 +131,17 @@ boundaries, deterministic output, validated cache behaviour, bounded error
 handling, and focused tests. This reference is a floor for implementation
 quality, not permission to copy consumer-specific behaviour into the package.
 
+## Coverage publication
+
+Pull-request CI generates serial, source-scoped coverage and compares it with
+the ratchet baseline written by the latest push to `main`. It neither invokes
+CodeScene nor receives `CS_ACCESS_TOKEN`.
+
+`coverage-main.yml` regenerates the same ratcheted coverage after each push to
+`main`, saves the next baseline, and explicitly uploads the report to
+CodeScene. Keep CodeScene credentials and the upload action in that workflow
+only.
+
 ## Change discipline
 
 New behaviour belongs here only when it is necessary to refresh the shared
