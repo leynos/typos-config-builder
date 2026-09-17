@@ -79,21 +79,20 @@ invocations without starting a process.
 ### Type-scoped rendering
 
 Available from 0.1.2, `render.py` emits one optional table beyond the fixed
-skeleton. When merged
-policy carries any `markdown_patterns`, a `[type.markdown]` table is written
-between the `[default]` array and `[default.extend-words]`, holding an
-`extend-glob` of `*.md` and the sorted confined expressions. When the tuple
-is empty the table is omitted entirely, so output stays byte-identical for
-every repository that does not use `[patterns] markdown_only`.
+skeleton. When merged policy carries any `markdown_patterns`, a
+`[type.markdown]` table is written between the `[default]` array and
+`[default.extend-words]`, holding an `extend-glob` of `*.md` and the sorted
+confined expressions. When the tuple is empty the table is omitted entirely, so
+output stays byte-identical for every repository that does not use
+`[patterns] markdown_only`.
 
 The withdrawal happens in `policy.merge`, not in the renderer: the merge
 subtracts the merged Markdown set from the unioned default ignore set, so a
-confined expression appears in exactly one of the two tables. `remove`
-applies to both sets, so an overlay can withdraw a confinement the shared
-authority supplied. A further
-type-scoped table should follow the same split, with the selection rule in
-`policy.py` and the emission in a small helper in `render.py`, so the
-renderer stays a pure function of normalized policy.
+confined expression appears in exactly one of the two tables. `remove` applies
+to both sets, so an overlay can withdraw a confinement the shared authority
+supplied. A further type-scoped table should follow the same split, with the
+selection rule in `policy.py` and the emission in a small helper in
+`render.py`, so the renderer stays a pure function of normalized policy.
 
 ### Fail-closed and worktree-escape rules
 
