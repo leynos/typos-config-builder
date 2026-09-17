@@ -22,6 +22,7 @@ dev = [
     "ty",
     "pytest-timeout",
     "pytest-xdist",
+    "pyyaml>=6.0.3",
 ]
 
 [tool.ruff]

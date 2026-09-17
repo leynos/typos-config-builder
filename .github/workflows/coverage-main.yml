@@ -1,22 +1,11 @@
 name: Coverage (main)
 
-# CodeScene accepts `cs-coverage upload` only for analysed branches, so
-# main-branch coverage is uploaded here on push; pull requests generate
-# coverage (and, in a future fast-follow, run the changed-line
-# `cs-coverage check` gate) in ci.yml instead. This workflow also
-# advances the coverage ratchet baseline: caches saved on main are
-# readable by every pull-request run, so the baseline written here is the
-# one PR ratchet checks compare against.
-#
-# `workflow_dispatch` is mandatory, not a convenience: merges performed by
-# the automerge workflow's GITHUB_TOKEN do not fire push-event workflows,
-# so automerged changes to main only receive coverage via a manual
-# dispatch.
+# Pull requests use the coverage baseline saved by this main-push workflow.
+# They do not contact CodeScene or receive its credentials.
 
 on:
   push:
     branches: [main]
-  workflow_dispatch:
 
 jobs:
   coverage-upload:
@@ -26,7 +15,6 @@ jobs:
     env:
       CS_ACCESS_TOKEN: ${{ secrets.CS_ACCESS_TOKEN || '' }}
       CODESCENE_CLI_SHA256: ${{ vars.CODESCENE_CLI_SHA256 || '' }}
-      
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
@@ -41,22 +29,24 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
 
-      
       - name: Generate coverage
-        uses: leynos/shared-actions/.github/actions/generate-coverage@57a33fa65e329db7edc81ece661f1a2e1d39868f
+        uses: leynos/shared-actions/.github/actions/generate-coverage@152d9c4784d0ae5877938a984fe6d1f04d718fd8
         with:
+          language: python
+          python-source: typos_config_builder
           output-path: coverage.xml
           format: cobertura
           artefact-name-suffix: typos-config-builder
+          pytest-workers: ''
           with-ratchet: 'true'
           baseline-python-file: .coverage-baseline.typos-config-builder.python
-          
 
       - name: Upload coverage data to CodeScene
         if: env.CS_ACCESS_TOKEN != ''
-        uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@57a33fa65e329db7edc81ece661f1a2e1d39868f
+        uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@152d9c4784d0ae5877938a984fe6d1f04d718fd8
         with:
           format: cobertura
           path: coverage.xml
+          mode: upload
           access-token: ${{ env.CS_ACCESS_TOKEN }}
           installer-checksum: ${{ env.CODESCENE_CLI_SHA256 }}
