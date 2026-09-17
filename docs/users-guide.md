@@ -144,17 +144,16 @@ extend-ignore-re = [
 
 The example above is cuprum's case. Its architecture decision record 009
 requires Oxford spelling in source identifiers, so masking inline code spans
-and fenced blocks everywhere would let a misspelled identifier through.
-Under `markdown_only` the two masks relax the documentation checks alone,
-and Rust source is still checked in full.
+and fenced blocks everywhere would let a misspelled identifier through. Under
+`markdown_only` the two masks relax the documentation checks alone, and Rust
+source is still checked in full.
 
 An expression does not have to exist in the shared dictionary to be confined:
-listing one that is absent simply scopes it to Markdown. Entries are
-validated for regex safety exactly like `ignore` entries. `remove` withdraws
-a confined expression as well as an ignored one, so a repository can drop a
-Markdown mask the shared dictionary ships. Listing the same expression under
-both `remove` and `markdown_only` in one overlay is contradictory and is
-rejected.
+listing one that is absent simply scopes it to Markdown. Entries are validated
+for regex safety exactly like `ignore` entries. `remove` withdraws a confined
+expression as well as an ignored one, so a repository can drop a Markdown mask
+the shared dictionary ships. Listing the same expression under both `remove` and
+`markdown_only` in one overlay is contradictory and is rejected.
 
 See [the migration guide for 0.1.2](migration-guide-0-1-2.md) for the steps a
 consumer whose legacy output carried a `[type.markdown]` table should take.
