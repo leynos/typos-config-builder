@@ -2,9 +2,9 @@
 
 ## Who this affects
 
-Any repository on 0.1.0 or 0.1.1 whose legacy generated `typos.toml` carried
-a `[type.markdown]` table, and any repository that wants an ignore expression
-to mask documentation without masking source. Repositories that need neither
+Any repository on 0.1.0 or 0.1.1 whose legacy generated `typos.toml` carried a
+`[type.markdown]` table, and any repository that wants an ignore expression to
+mask documentation without masking source. Repositories that need neither
 require no change: 0.1.2 is additive and generates byte-identical output for
 every overlay that does not use the new key.
 
@@ -15,8 +15,8 @@ Repositories that have not yet adopted the `gate` command should follow
 
 1. Bump the pinned version in the `uvx` invocation from `v0.1.1` to `v0.1.2`.
 2. If the repository's legacy generated `typos.toml` carried a
-   `[type.markdown]` table, list that table's `extend-ignore-re` entries
-   under `[patterns] markdown_only` in `typos.local.toml`:
+   `[type.markdown]` table, list that table's `extend-ignore-re` entries under
+   `[patterns] markdown_only` in `typos.local.toml`:
 
    ```toml
    schema = 1
@@ -26,8 +26,8 @@ Repositories that have not yet adopted the `gate` command should follow
    ```
 
 3. Remove those same expressions from `[patterns] ignore` if the overlay
-   also listed them there. Leaving them is harmless, because confinement
-   wins, but the duplication is misleading.
+   also listed them there. Leaving them is harmless, because confinement wins,
+   but the duplication is misleading.
 4. Regenerate by running the `gate` command, and confirm the regenerated
    `typos.toml` reproduces the expected `[type.markdown]` table.
 
