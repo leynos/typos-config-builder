@@ -133,11 +133,22 @@ quality, not permission to copy consumer-specific behaviour into the package.
 
 ## Coverage publication
 
-Pull-request CI generates coverage with the ratchet (`with-ratchet: 'true'`)
-against the baseline that `coverage-main.yml` writes on pushes to `main`, and
-publishes no coverage artefact (`publish-artefact: 'false'`). Nothing a pull
-request runs invokes CodeScene, runs `cs-coverage`, receives `CS_ACCESS_TOKEN`,
-or names the CodeScene host.
+The coverage run is the suite's only run on each event: `ci.yml` on a pull
+request and `coverage-main.yml` on a push to `main`. An `act-validation.yml`
+workflow used to run `make test WITH_ACT=1` beside both, but no test reads the
+`RUN_ACT_VALIDATION` variable that flag sets, so it ran the same 251 tests a
+second time and was removed. `tests/test_suite_runs_once.py` keeps any other
+workflow step, or local composite action step, from running the suite again. It
+reads commands through `tests/suite_commands.py`, which splits a command at
+shell separators, reads each segment's program before its arguments, and looks
+through `uv run`, `uvx` and `python -m` wrappers; use it for any other contract
+that asks whether a command runs the suite.
+
+Pull-request continuous integration (CI) generates coverage with the ratchet
+(`with-ratchet: 'true'`) against the baseline that `coverage-main.yml` writes
+on pushes to `main`, and publishes no coverage artefact
+(`publish-artefact: 'false'`). Nothing a pull request runs invokes CodeScene,
+runs `cs-coverage`, receives `CS_ACCESS_TOKEN`, or names the CodeScene host.
 
 `coverage-main.yml` is the single publisher. It runs on pushes to `main` and on
 manual dispatch, reports whether `CS_ACCESS_TOKEN` is set from a
