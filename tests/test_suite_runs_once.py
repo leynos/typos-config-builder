@@ -20,8 +20,55 @@ from tests.workflow_reading import all_steps, load_document, triggers
 
 WORKFLOWS = Path(__file__).resolve().parents[1] / ".github" / "workflows"
 COVERAGE_ACTION = "leynos/shared-actions/.github/actions/generate-coverage@"
-#: A command that runs the suite; options and assignments may precede `test`.
-SUITE = re.compile(r"\bpytest\b|\bmake\s+((?:\S+=\S+|-\S+)\s+)*test(?![-\w])")
+MAKE_VALUE_OPTIONS = frozenset({
+    "-C",
+    "-f",
+    "-I",
+    "-o",
+    "-W",
+    "--directory",
+    "--file",
+    "--makefile",
+})
+SUITE_TARGETS = frozenset({"test", "all"})
+SEPARATORS = re.compile(r"&&|\|\||[;|\n]")
+PYTEST = re.compile(r"\bpytest\b")
+
+
+def _make_targets(words: list[str]) -> list[str]:
+    """Return the targets of a ``make`` call: its words less options and values."""
+    start = next(
+        (i for i, word in enumerate(words) if word == "make" or word.endswith("/make")),
+        None,
+    )
+    if start is None:
+        return []
+    found: list[str] = []
+    skip = False
+    for word in words[start + 1 :]:
+        if skip:
+            skip = False
+        elif word in MAKE_VALUE_OPTIONS:
+            skip = True
+        elif not word.startswith("-") and "=" not in word:
+            found.append(word)
+    return found
+
+
+def runs_suite(command: str) -> bool:
+    """Report whether a shell command runs the suite, in any spelling.
+
+    Examples
+    --------
+    >>> runs_suite("make -C . test")
+    True
+    >>> runs_suite("make test-workflow-contracts")
+    False
+    """
+    return bool(PYTEST.search(command)) or any(
+        SUITE_TARGETS & set(_make_targets(segment.split()))
+        for segment in SEPARATORS.split(command)
+    )
 
 
 def _document(name: str) -> dict[object, object]:
@@ -39,19 +86,22 @@ def _coverage_steps(name: str) -> list[dict[object, object]]:
 
 
 @pytest.mark.parametrize(
-    ("command", "runs_suite"),
+    ("command", "expected"),
     [
         ("make test", True),
         ("make test WITH_ACT=1", True),
         ("make -j2 test", True),
+        ("make -C . test", True),
+        ("make all", True),
+        ("set -eu && make test", True),
         ("uv run pytest -v", True),
         ("make test-workflow-contracts", False),
         ("make typecheck", False),
     ],
 )
-def test_the_suite_pattern(command: str, *, runs_suite: bool) -> None:
+def test_the_suite_pattern(command: str, *, expected: bool) -> None:
     """Recognize every spelling of a suite run, and nothing longer."""
-    assert bool(SUITE.search(command)) is runs_suite, command
+    assert runs_suite(command) is expected, command
 
 
 def test_no_workflow_step_runs_the_suite() -> None:
@@ -60,7 +110,7 @@ def test_no_workflow_step_runs_the_suite() -> None:
         (path.name, step.get("run"))
         for path in sorted(WORKFLOWS.glob("*.y*ml"))
         for step in all_steps(_document(path.name))
-        if SUITE.search(str(step.get("run", "")))
+        if runs_suite(str(step.get("run", "")))
     ]
     assert not repeated, f"the suite runs outside coverage in {repeated!r}"
 
