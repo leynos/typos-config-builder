@@ -6,83 +6,37 @@ A pull request runs the suite under coverage in ``ci.yml``, and a push to
 events as well. No test reads the ``RUN_ACT_VALIDATION`` variable that flag
 sets, so a collection selects the same 251 tests either way, and the
 workflow ran the whole suite a second time. It was removed. These tests keep
-a second suite run from returning.
+a second suite run from returning, across every workflow and every local
+composite action, since a step there runs as part of whatever uses it.
 """
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import pytest
 
-from tests.workflow_reading import all_steps, load_document, triggers
+from tests.suite_commands import runs_suite
+from tests.workflow_reading import all_steps, filter_names, load_document, triggers
 
-WORKFLOWS = Path(__file__).resolve().parents[1] / ".github" / "workflows"
+GITHUB = Path(__file__).resolve().parents[1] / ".github"
+WORKFLOWS = GITHUB / "workflows"
 COVERAGE_ACTION = "leynos/shared-actions/.github/actions/generate-coverage@"
-MAKE_VALUE_OPTIONS = frozenset({
-    "-C",
-    "-f",
-    "-I",
-    "-o",
-    "-W",
-    "--directory",
-    "--file",
-    "--makefile",
-})
-SUITE_TARGETS = frozenset({"test", "all"})
-SEPARATORS = re.compile(r"&&|\|\||[;|\n]")
-PYTEST = re.compile(r"\bpytest\b")
+PULL_REQUEST_GUARD = "${{ github.event_name == 'pull_request' }}"
 
 
-def _make_targets(words: list[str]) -> list[str]:
-    """Return the targets of a ``make`` call: its words less options and values."""
-    start = next(
-        (i for i, word in enumerate(words) if word == "make" or word.endswith("/make")),
-        None,
-    )
-    if start is None:
-        return []
-    found: list[str] = []
-    skip = False
-    for word in words[start + 1 :]:
-        if skip:
-            skip = False
-        elif word in MAKE_VALUE_OPTIONS:
-            skip = True
-        elif not word.startswith("-") and "=" not in word:
-            found.append(word)
-    return found
-
-
-def runs_suite(command: str) -> bool:
-    """Report whether a shell command runs the suite, in any spelling.
-
-    Examples
-    --------
-    >>> runs_suite("make -C . test")
-    True
-    >>> runs_suite("make test-workflow-contracts")
-    False
-    """
-    return bool(PYTEST.search(command)) or any(
-        SUITE_TARGETS & set(_make_targets(segment.split()))
-        for segment in SEPARATORS.split(command)
-    )
+def _local_documents() -> dict[str, dict[object, object]]:
+    """Parse every workflow and local composite action, by relative path."""
+    paths = [*WORKFLOWS.glob("*.y*ml"), *GITHUB.glob("actions/**/action.y*ml")]
+    return {
+        str(path.relative_to(GITHUB)): load_document(path.read_text(encoding="utf-8"))
+        for path in sorted(paths)
+    }
 
 
 def _document(name: str) -> dict[object, object]:
     """Parse one repository workflow."""
     return load_document((WORKFLOWS / name).read_text(encoding="utf-8"))
-
-
-def _coverage_steps(name: str) -> list[dict[object, object]]:
-    """Return the coverage generation steps of one workflow."""
-    return [
-        step
-        for step in all_steps(_document(name))
-        if str(step.get("uses", "")).startswith(COVERAGE_ACTION)
-    ]
 
 
 @pytest.mark.parametrize(
@@ -93,10 +47,15 @@ def _coverage_steps(name: str) -> list[dict[object, object]]:
         ("make -j2 test", True),
         ("make -C . test", True),
         ("make all", True),
+        ("make", True),
+        ('make "test"', True),
+        ("make lint&&make test", True),
         ("set -eu && make test", True),
         ("uv run pytest -v", True),
+        ("uv run --with 'pytest>=8' python -m pytest -q", True),
         ("make test-workflow-contracts", False),
         ("make typecheck", False),
+        ("echo pytest", False),
     ],
 )
 def test_the_suite_pattern(command: str, *, expected: bool) -> None:
@@ -104,30 +63,45 @@ def test_the_suite_pattern(command: str, *, expected: bool) -> None:
     assert runs_suite(command) is expected, command
 
 
-def test_no_workflow_step_runs_the_suite() -> None:
-    """Refuse a plain suite run anywhere; the coverage action is the one run."""
+def test_no_local_step_runs_the_suite() -> None:
+    """Refuse a plain suite run in any workflow or local composite action."""
     repeated = [
-        (path.name, step.get("run"))
-        for path in sorted(WORKFLOWS.glob("*.y*ml"))
-        for step in all_steps(_document(path.name))
+        (where, step.get("run"))
+        for where, document in _local_documents().items()
+        for step in all_steps(document)
         if runs_suite(str(step.get("run", "")))
     ]
     assert not repeated, f"the suite runs outside coverage in {repeated!r}"
 
 
-def test_a_pull_request_runs_coverage_in_ci() -> None:
-    """Require `ci.yml`'s coverage step on pull requests."""
-    assert "pull_request" in triggers(_document("ci.yml"))
-    steps = _coverage_steps("ci.yml")
-    assert len(steps) == 1, "expected one coverage step in ci.yml"
-    assert steps[0].get("if") == "${{ github.event_name == 'pull_request' }}"
+def test_coverage_runs_only_in_the_two_lanes() -> None:
+    """Require the coverage action in ``ci.yml`` and the publisher alone."""
+    lanes = {
+        where: [
+            step
+            for step in all_steps(document)
+            if str(step.get("uses", "")).startswith(COVERAGE_ACTION)
+        ]
+        for where, document in _local_documents().items()
+    }
+    placed = {where: len(steps) for where, steps in lanes.items() if steps}
+    assert placed == {"workflows/ci.yml": 1, "workflows/coverage-main.yml": 1}, placed
+    assert lanes["workflows/ci.yml"][0].get("if") == PULL_REQUEST_GUARD
+    assert "if" not in lanes["workflows/coverage-main.yml"][0], (
+        "the publisher's coverage step must always run"
+    )
 
 
-def test_a_push_to_main_runs_coverage_in_the_publisher() -> None:
-    """Require an unguarded coverage step in `coverage-main.yml` on push."""
+def test_every_pull_request_reaches_coverage() -> None:
+    """Require an unfiltered ``pull_request`` trigger on ``ci.yml``."""
+    pull_request = triggers(_document("ci.yml")).get("pull_request")
+    assert pull_request in ("", None, {}), (
+        f"ci.yml's pull_request trigger is filtered: {pull_request!r}"
+    )
+
+
+def test_every_push_to_main_reaches_the_publisher() -> None:
+    """Require a push trigger naming ``main`` exactly on the publisher."""
     push = triggers(_document("coverage-main.yml")).get("push")
     assert isinstance(push, dict), "coverage-main.yml must trigger on push"
-    assert "main" in str(push.get("branches")), "the push trigger must name main"
-    steps = _coverage_steps("coverage-main.yml")
-    assert len(steps) == 1, "expected one coverage step in coverage-main.yml"
-    assert "if" not in steps[0], "the publisher's coverage step must always run"
+    assert "main" in filter_names(push.get("branches")), "the push must name main"
