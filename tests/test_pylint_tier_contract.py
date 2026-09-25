@@ -10,6 +10,7 @@ disabled `syntax-error` let unparseable modules go unlinted.
 """
 
 import re
+import shlex
 import shutil
 import subprocess  # noqa: S404  # The end-to-end test drives Make.
 import tomllib
@@ -74,6 +75,23 @@ def test_pylint_reports_unparseable_modules() -> None:
     )
 
 
+def _make_quoted(path: Path) -> str:
+    """Quote a path for a shell word inside a Make recipe.
+
+    Parameters
+    ----------
+    path : Path
+        The path to quote.
+
+    Returns
+    -------
+    str
+        The shell-quoted path with each ``$`` doubled, so Make passes it to
+        the shell as one literal word.
+    """
+    return shlex.quote(str(path)).replace("$", "$$")
+
+
 def _run_configured_pylint(target: Path) -> subprocess.CompletedProcess[str]:
     """Run the Makefile's own `$(PYLINT)` command over one module.
 
@@ -97,7 +115,7 @@ def _run_configured_pylint(target: Path) -> subprocess.CompletedProcess[str]:
             "-C",
             str(_REPO_ROOT),
             "--eval",
-            f"{_PROBE_TARGET}: ; $(PYLINT) {target}",
+            f"{_PROBE_TARGET}: ; $(PYLINT) {_make_quoted(target)}",
             _PROBE_TARGET,
         ],
         capture_output=True,
