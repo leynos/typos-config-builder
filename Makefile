@@ -20,7 +20,7 @@ ACT_TEST_ENV = $(if $(filter 1 true yes on,$(WITH_ACT)),RUN_ACT_VALIDATION=1,)
 PYTEST_XDIST_WORKERS ?= auto
 PYTHON_TARGETS ?= typos_config_builder tests
 # Pylint runs on CPython at the project's 3.14 baseline: the source uses 3.14
-# syntax (PEP 758 unparenthesised `except` lists) that no managed PyPy parses.
+# syntax (PEP 758 unparenthesized `except` lists) that no managed PyPy parses.
 PYLINT_PYTHON ?= 3.14
 PYLINT_VERSION ?= 4.0.9
 PYLINT_TARGETS ?= $(PYTHON_TARGETS)

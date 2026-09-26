@@ -218,3 +218,15 @@ Use the Makefile targets documented in `AGENTS.md`. Gate changes with the
 relevant formatting, lint, type, test, spelling, and audit targets before
 commit. The package's own spelling configuration is generated in the same way
 as a consumer's configuration; do not edit `typos.toml` by hand.
+
+### Pylint tier
+
+`make lint-python` runs a pinned Pylint release (`PYLINT_VERSION`) through
+`uv tool run --managed-python --python $(PYLINT_PYTHON)`, isolated from the
+project environment. `PYLINT_PYTHON` is CPython 3.14, the project baseline, not
+PyPy: `builder.py`, `cache.py` and `remote.py` use PEP 758 unparenthesized
+`except` lists, which no managed PyPy parses. `syntax-error` stays enabled, so
+a module the interpreter cannot parse fails the lint instead of being skipped;
+`disable = ["all"]` alone does not suppress it.
+`tests/test_pylint_tier_contract.py` holds the pins and runs the configured
+command against an unparsable and a clean module.
