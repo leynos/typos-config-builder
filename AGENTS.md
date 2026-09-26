@@ -83,8 +83,10 @@
       `ruff format --check $(PYTHON_TARGETS)`.
     - `make lint` runs `make lint-python`; `make lint-python` runs
       `ruff check $(PYTHON_TARGETS)`, enforces 100% docstring coverage with
-      `interrogate --fail-under 100 $(PYTHON_TARGETS)`, and runs the
-      PyPy-backed Pylint runner against `$(PYLINT_TARGETS)`.
+      `interrogate --fail-under 100 $(PYTHON_TARGETS)`, and runs a
+      pinned Pylint on CPython 3.14 against `$(PYLINT_TARGETS)`; the source
+      uses 3.14 syntax that no managed PyPy parses, and a module Pylint cannot
+      parse fails the lint.
     - `make typecheck` runs `ty check $(PYTHON_TARGETS)`.
     - `make test` runs `pytest -v -n $(PYTEST_XDIST_WORKERS)` and honours
       `WITH_ACT=1` through `RUN_ACT_VALIDATION=1`.
