@@ -737,6 +737,7 @@ dependencies = [
 dev = [
     { name = "hypothesis" },
     { name = "interrogate" },
+    { name = "packaging" },
     { name = "pip" },
     { name = "pip-audit" },
     { name = "pyright" },
@@ -759,6 +760,7 @@ requires-dist = [
 dev = [
     { name = "hypothesis" },
     { name = "interrogate" },
+    { name = "packaging", specifier = ">=26.2" },
     { name = "pip", specifier = ">=26.2" },
     { name = "pip-audit" },
     { name = "pyright" },
