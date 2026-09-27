@@ -163,8 +163,8 @@ repository that does not use the key generates byte-identical output.
 
 ## Document the gate in AGENTS.md
 
-Coding agents read a repository's `AGENTS.md`, so each consumer documents the
-gate there with one canonical block: the text in
+Available from 0.1.3. Coding agents read a repository's `AGENTS.md`, so each
+consumer documents the gate there with one canonical block: the text in
 [AGENTS.md spelling block](agents-md-spelling.md), copied verbatim with its
 `typos-config-builder:agents-md` start and end markers. The block replaces any
 other spelling or Typos prose in `AGENTS.md`. It tells an agent to commit the
