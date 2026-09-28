@@ -6,6 +6,9 @@ updates:
       github-actions:
         patterns:
           - '*'
+        update-types:
+          - 'minor'
+          - 'patch'
     directories:
       - "/"
       - "/.github/actions/*"
@@ -14,13 +17,20 @@ updates:
       - "dependencies"
       - "github-actions"
     schedule:
-      interval: "weekly"
+      interval: "daily"
     cooldown:
       default-days: 7
 
   # Enable version updates for Python (uv-managed pyproject.toml)
   - package-ecosystem: "uv"
     directory: "/"
+    groups:
+      minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
