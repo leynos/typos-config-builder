@@ -4,8 +4,8 @@ name: Coverage (main)
 # only for analysed branches, so main's coverage is uploaded here on
 # push. Pull requests generate coverage with the ratchet this workflow
 # advances, and nothing a pull request runs receives CodeScene
-# credentials or contacts CodeScene. tests/test_codescene_coverage_contract.py
-# holds the shape.
+# credentials or contacts CodeScene. `cv005-contracts` (the Makefile's
+# `test-workflow-contracts` target) holds the shape.
 #
 # `workflow_dispatch` is mandatory, not a convenience: merges performed by
 # the automerge workflow's GITHUB_TOKEN do not fire push-event workflows,
