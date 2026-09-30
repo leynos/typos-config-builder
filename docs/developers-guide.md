@@ -206,7 +206,10 @@ clause against breaching fixtures in its own suite, so this repository keeps no
 copy of the CodeScene readers. The repository's parameters are in
 `.github/cv005.toml`: `repository`, and the publisher's exact `[selection]`, so
 a change made to the generators and the uploader together is still a reviewed
-change. `tests/workflow_reading.py` remains for the suite-runs-once contract.
+change. The selection scopes Python coverage to `./typos_config_builder` with
+`python-source`, so the ratchet measures the package and not its tests;
+deleting near-fully covered contract tests then cannot move the percentage.
+`tests/workflow_reading.py` remains for the suite-runs-once contract.
 
 ## Change discipline
 
