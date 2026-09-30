@@ -126,13 +126,14 @@ def names_ubicloud(job: dict[object, object]) -> bool:
     -------
     bool
         True when its `runs-on` names Ubicloud, or reads a matrix value
-        (`${{ matrix.runner }}`) while its `strategy` names Ubicloud, so an
+        (`${{ matrix.runner }}` or `${{ matrix['runner'] }}`) while its
+        `strategy` names Ubicloud, so an
         indirect placement is inventoried and then rejected by the judgement
         rather than skipped.
     """
     runs_on = str(job.get("runs-on", ""))
     return "ubicloud" in runs_on or (
-        "matrix." in runs_on and "ubicloud" in str(job.get("strategy", ""))
+        "matrix" in runs_on and "ubicloud" in str(job.get("strategy", ""))
     )
 
 
@@ -270,15 +271,28 @@ def test_a_hosted_job_is_not_inventoried() -> None:
     assert not placed, f"a hosted job was inventoried: {placed}"
 
 
-def test_an_indirect_ubicloud_runner_is_inventoried_and_rejected() -> None:
+@pytest.mark.parametrize(
+    "reference",
+    ["${{ matrix.runner }}", "${{ matrix['runner'] }}"],
+    ids=["dotted", "indexed"],
+)
+def test_an_indirect_ubicloud_runner_is_inventoried_and_rejected(
+    reference: str,
+) -> None:
     """Inventory a runner named through the matrix, and refuse it.
 
-    An indirect `runs-on: ${{ matrix.runner }}` whose matrix names Ubicloud
-    would otherwise escape the inventory, and with it the fork fallback and
-    the ceiling. Only the runner-selection expression places a lane.
+    An indirect `runs-on` whose matrix names Ubicloud would otherwise escape
+    the inventory, and with it the fork fallback and the ceiling, whichever
+    context-access form it uses. Only the runner-selection expression places a
+    lane.
+
+    Parameters
+    ----------
+    reference
+        The matrix reference, in dotted or indexed form.
     """
     text = (
-        "jobs:\n  lane:\n    runs-on: ${{ matrix.runner }}\n"
+        f"jobs:\n  lane:\n    runs-on: {reference}\n"
         "    strategy:\n      matrix:\n        runner: [ubicloud-standard-2]\n"
     )
     placed = placed_jobs({"x.yml": load_document(text)})
