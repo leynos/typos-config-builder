@@ -13,8 +13,8 @@ jobs:
     # reads; coverage-main.yml's coverage-upload is on the same class.
     runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'ubicloud-standard-2' }}
     # An Ubicloud runner is a self-hosted just-in-time runner with no
-    # six-hour hosted cap, so the job states its own ceiling. Provisional
-    # until a warm Ubicloud run sizes it.
+    # six-hour hosted cap, so the job states its own ceiling: twice the 5.1 min
+    # of the first Ubicloud main run (run 36708777716), rounded up to 15.
     timeout-minutes: 15
     permissions:
       contents: read

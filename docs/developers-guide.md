@@ -234,8 +234,9 @@ main push.
 An Ubicloud runner is a self-hosted just-in-time runner, so GitHub's six-hour
 cap for hosted jobs does not bound it and a hung job would hold a billable
 runner. Every job whose `runs-on` can select Ubicloud therefore states its own
-`timeout-minutes`: twice a measured warm Ubicloud run. The current values are
-provisional until a warm run sizes them.
+`timeout-minutes`: twice a measured Ubicloud run. `lint-test` is at 15 minutes
+(its first main run took 5.1 min, run 36708777716) and `coverage-upload` at 5
+(48 s, run 36708777455).
 
 `tests/test_runner_placement_contract.py` holds the placement to the files. It
 evaluates the expression for a push or dispatch, a same-repository pull request
