@@ -8,6 +8,8 @@ on:
 jobs:
   lint-test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
@@ -58,6 +60,9 @@ jobs:
       - name: Run typechecker
         run: make typecheck
 
+      - name: Check the CV-005 contracts
+        run: make test-workflow-contracts
+
       - name: Check spelling
         run: make spelling
 
@@ -91,3 +96,4 @@ jobs:
           with-ratchet: 'true'
           publish-artefact: 'false'
           baseline-python-file: .coverage-baseline.typos-config-builder.python
+          python-source: ./typos_config_builder
