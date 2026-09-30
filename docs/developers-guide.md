@@ -211,6 +211,40 @@ change. The selection scopes Python coverage to `./typos_config_builder` with
 deleting near-fully covered contract tests then cannot move the percentage.
 `tests/workflow_reading.py` remains for the suite-runs-once contract.
 
+## Runner placement
+
+`ci.yml`'s `lint-test` and `coverage-main.yml`'s `coverage-upload` run on
+`ubicloud-standard-2`. `runs-on` selects it with the runner-selection
+expression:
+
+```yaml
+runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'ubicloud-standard-2' }}
+```
+
+A pull request from a fork cannot obtain an Ubicloud runner, so it falls back to
+`ubuntu-latest`; a push and a dispatch have no pull request, so the fork value
+is null and they select Ubicloud. A push to `main` runs both lanes, so main
+writes the Ubicloud cache scope a pull request reads, on the same class as the
+reader. Ubicloud's cache proxy is scoped by ref, so a pull request's lane reads
+a warm main scope only when a main job on Ubicloud writes it. A fork's pull
+request restores a hosted cache that main no longer refreshes; fork pull
+requests are rare here, and a second hosted writer would pay double on every
+main push.
+
+An Ubicloud runner is a self-hosted just-in-time runner, so GitHub's six-hour
+cap for hosted jobs does not bound it and a hung job would hold a billable
+runner. Every job whose `runs-on` can select Ubicloud therefore states its own
+`timeout-minutes`: twice a measured warm Ubicloud run. The current values are
+provisional until a warm run sizes them.
+
+`tests/test_runner_placement_contract.py` holds the placement to the files. It
+evaluates the expression for a push or dispatch, a same-repository pull request
+and a fork, rejects a literal label, inverted arms, another label and another
+condition, inventories and refuses a runner named through the matrix, and
+asserts an exact inventory of the jobs that can land on Ubicloud with their
+runner class and ceiling. A change that adds, removes or re-times such a job
+fails it until the inventory is updated in the same commit.
+
 ## Change discipline
 
 New behaviour belongs here only when it is necessary to refresh the shared

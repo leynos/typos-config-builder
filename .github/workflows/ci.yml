@@ -7,7 +7,15 @@ on:
 
 jobs:
   lint-test:
-    runs-on: ubuntu-latest
+    # Ubicloud, to avoid the hosted queue. A pull request from a fork cannot
+    # obtain an Ubicloud runner, so it falls back to the hosted pool. A push
+    # to main runs here too, so main writes the Ubicloud cache scope this
+    # reads; coverage-main.yml's coverage-upload is on the same class.
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'ubicloud-standard-2' }}
+    # An Ubicloud runner is a self-hosted just-in-time runner with no
+    # six-hour hosted cap, so the job states its own ceiling. Provisional
+    # until a warm Ubicloud run sizes it.
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
