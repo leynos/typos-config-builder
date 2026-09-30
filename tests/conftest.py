@@ -13,7 +13,7 @@ import pathlib
 
 # The gate's contracts inspect the command line it assembles for the pinned
 # Typos binary, so the fakes need the same completion type the gate returns.
-import subprocess  # noqa: S404 - only CompletedProcess and DEVNULL are used.
+import subprocess  # ruff: ignore[suspicious-subprocess-import] - only CompletedProcess and DEVNULL are used.
 from pathlib import Path
 from unittest import mock
 
@@ -133,8 +133,8 @@ def cache_text(
 
 def _git(repository: pathlib.Path, *arguments: str) -> None:
     """Run one Git command inside a fixture repository."""
-    subprocess.run(  # noqa: S603 - only fixed, trusted fixture arguments.
-        ["git", "-C", str(repository), *arguments],  # noqa: S607 - git is
+    subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - only fixed, trusted fixture arguments.
+        ["git", "-C", str(repository), *arguments],  # ruff: ignore[start-process-with-partial-path] - git is
         # intentionally resolved from PATH; fixtures need no absolute path.
         check=True,
         capture_output=True,

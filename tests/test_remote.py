@@ -70,7 +70,7 @@ def _redirect_to(target: str) -> urllib.request.Request | None:
     """Ask the guarded handler to follow one redirect to ``target``."""
     handler = remote._HttpsRedirectHandler()
     return handler.redirect_request(
-        urllib.request.Request(SOURCE),  # noqa: S310 - HTTPS, and never opened.
+        urllib.request.Request(SOURCE),  # ruff: ignore[suspicious-url-open-usage] - HTTPS, and never opened.
         typ.cast("typ.IO[bytes]", None),
         302,
         "Found",
