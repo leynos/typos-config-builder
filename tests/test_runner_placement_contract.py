@@ -34,7 +34,7 @@ PLACEMENTS: typ.Final = (
         ".github/workflows/coverage-main.yml",
         "coverage-upload",
         "ubicloud-standard-2",
-        "10",
+        "5",
     ),
 )
 
