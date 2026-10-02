@@ -12,7 +12,7 @@ disabled `syntax-error` let unparseable modules go unlinted.
 import re
 import shlex
 import shutil
-import subprocess  # noqa: S404  # The end-to-end test drives Make.
+import subprocess  # ruff: ignore[suspicious-subprocess-import]  # The end-to-end test drives Make.
 import tomllib
 from pathlib import Path
 
@@ -107,7 +107,7 @@ def _run_configured_pylint(target: Path) -> subprocess.CompletedProcess[str]:
     """
     make = shutil.which("make")
     assert make is not None, "make must be on PATH"
-    return subprocess.run(  # noqa: S603  # Fixed argv; the target is a test file.
+    return subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]  # Fixed argv; the target is a test file.
         [
             make,
             "--no-print-directory",

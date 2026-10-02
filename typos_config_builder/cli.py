@@ -6,7 +6,7 @@ import pathlib
 
 # Only CalledProcessError is used here, to report a failed Git enumeration
 # as one concise line; this module never starts a process itself.
-import subprocess  # noqa: S404 - the module is imported for its exception type.
+import subprocess  # ruff: ignore[suspicious-subprocess-import] - the module is imported for its exception type.
 import sys
 import typing as typ
 

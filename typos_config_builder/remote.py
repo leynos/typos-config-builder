@@ -183,7 +183,7 @@ def _https_request(
     if urllib.parse.urlsplit(source).scheme != "https":
         message = f"shared dictionary URL must use HTTPS: {source}"
         raise cache_support.InsecureSourceError(message)
-    return urllib.request.Request(  # noqa: S310 - HTTPS is validated above.
+    return urllib.request.Request(  # ruff: ignore[suspicious-url-open-usage] - HTTPS is validated above.
         source,
         headers=dict(headers),
     )

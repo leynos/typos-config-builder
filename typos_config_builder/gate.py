@@ -18,7 +18,7 @@ import pathlib
 
 # The gate runs the pinned Typos console script by design. The executable is
 # resolved from the installed environment and its arguments are tracked paths.
-import subprocess  # noqa: S404
+import subprocess  # ruff: ignore[suspicious-subprocess-import]
 import sys
 import typing as typ
 

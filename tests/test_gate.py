@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 import pathlib
-import subprocess  # noqa: S404 - only a fixture repository's own Git calls.
+import subprocess  # ruff: ignore[suspicious-subprocess-import] - only a fixture repository's own Git calls.
 
 import pytest
 from conftest import CORRECTION, PROHIBITED, FakeRunner, build_repository
@@ -24,8 +24,8 @@ OXFORD = "organ" + "ize"
 
 def stage(repository: pathlib.Path, *paths: str) -> None:
     """Stage extra paths in a fixture repository after it was built."""
-    subprocess.run(  # noqa: S603
-        ["git", "-C", str(repository), "add", *paths],  # noqa: S607
+    subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]
+        ["git", "-C", str(repository), "add", *paths],  # ruff: ignore[start-process-with-partial-path]
         check=True,
         capture_output=True,
         stdin=subprocess.DEVNULL,

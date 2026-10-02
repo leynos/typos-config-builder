@@ -23,7 +23,7 @@ import shutil
 
 # The phrase gate enumerates tracked files through Git by design; the
 # command is resolved from PATH and its arguments are never user text.
-import subprocess  # noqa: S404
+import subprocess  # ruff: ignore[suspicious-subprocess-import]
 import typing as typ
 
 from typos_config_builder import builder
@@ -115,7 +115,7 @@ def tracked_files(repository: pathlib.Path) -> tuple[pathlib.Path, ...]:
     if executable is None:
         message = "git was not found on PATH; it is required to list tracked files"
         raise FileNotFoundError(message)
-    listing = subprocess.run(  # noqa: S603
+    listing = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]
         # --stage carries the index mode, which plain ls-files discards, and
         # the mode is the only reliable way to recognize a gitlink.
         [executable, "-C", str(repository), "ls-files", "-z", "--stage"],
