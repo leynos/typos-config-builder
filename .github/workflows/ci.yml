@@ -57,7 +57,7 @@ jobs:
         # first release with `--check` and `--git`.
         uses: leynos/shared-actions/.github/actions/install-mdtablefix@b9a3bff63b1e19b3a48d433668184e24e1abd3ba
         with:
-          version: "0.6.0"
+          version: "0.6.1"
 
       - name: Check formatting
         run: make check-fmt
