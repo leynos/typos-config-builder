@@ -47,7 +47,7 @@ PLACEMENTS: typ.Final = (
     ),
 )
 
-#: The runner-selection shape: a parenthesised condition, a quoted hosted arm
+#: The runner-selection shape: a parenthesized condition, a quoted hosted arm
 #: and a quoted other arm. The condition may itself hold `||`, so it is matched
 #: up to its closing parenthesis.
 _SHAPE: typ.Final = re.compile(
