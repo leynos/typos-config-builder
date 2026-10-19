@@ -25,8 +25,9 @@ from tests.workflow_reading import Document, jobs, load_document, read_workflow_
 REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parents[1]
 HOSTED_LABEL: typ.Final = "ubuntu-latest"
 FORK_CONDITION: typ.Final = "github.event.pull_request.head.repo.fork"
-#: The pull request's author, not `github.actor`: the actor changes when
-#: someone re-runs a job or pushes to the branch, which would flip the runner.
+#: The pull request's author, not `github.actor`: the actor is whoever
+#: triggered the run, so a person pushing to a Dependabot branch would flip
+#: the runner.
 DEPENDABOT_CONDITION: typ.Final = (
     "github.event.pull_request.user.login == 'dependabot[bot]'"
 )
