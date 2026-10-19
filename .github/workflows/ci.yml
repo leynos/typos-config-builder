@@ -8,10 +8,16 @@ on:
 jobs:
   lint-test:
     # Ubicloud, to avoid the hosted queue. A pull request from a fork cannot
-    # obtain an Ubicloud runner, so it falls back to the hosted pool. A push
-    # to main runs here too, so main writes the Ubicloud cache scope this
-    # reads; coverage-main.yml's coverage-upload is on the same class.
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'ubicloud-standard-2' }}
+    # obtain an Ubicloud runner, so it falls back to the hosted pool; so does a
+    # Dependabot pull request, which GitHub-hosted runners serve at no charge
+    # on a public repository. The author is tested, not the actor, because the
+    # actor changes when someone re-runs or pushes. A push to main runs here
+    # too, so main writes the Ubicloud cache scope this reads;
+    # coverage-main.yml's coverage-upload is on the same class.
+    runs-on: >-
+      ${{ (github.event.pull_request.head.repo.fork
+      || github.event.pull_request.user.login == 'dependabot[bot]')
+      && 'ubuntu-latest' || 'ubicloud-standard-2' }}
     # An Ubicloud runner is a self-hosted just-in-time runner with no
     # six-hour hosted cap, so the job states its own ceiling: twice the 5.1 min
     # of the first Ubicloud main run (run 36708777716), rounded up to 15.

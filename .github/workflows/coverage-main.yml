@@ -37,9 +37,12 @@ jobs:
   coverage-upload:
     # Ubicloud's cache proxy is scoped by ref, so a pull request's Ubicloud
     # lint-test reads a warm main scope only if a main job on Ubicloud writes
-    # it. This is a main writer. The fork arm never applies on push or
-    # dispatch; it is kept so every Ubicloud lane reads the same way.
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'ubicloud-standard-2' }}
+    # it. This is a main writer. The fork and Dependabot arms never apply on
+    # push or dispatch; they are kept so every Ubicloud lane reads the same way.
+    runs-on: >-
+      ${{ (github.event.pull_request.head.repo.fork
+      || github.event.pull_request.user.login == 'dependabot[bot]')
+      && 'ubuntu-latest' || 'ubicloud-standard-2' }}
     # An Ubicloud runner is a self-hosted just-in-time runner with no
     # six-hour hosted cap, so the job states its own ceiling: twice the 48 s
     # of the first Ubicloud main run (run 36708777455), rounded up to 5.
