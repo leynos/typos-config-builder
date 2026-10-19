@@ -1,9 +1,11 @@
 """Hold the workflows' Ubicloud placement to the files: expression and ceiling.
 
 Ubicloud's cache proxy is scoped by ref, and a pull request from a fork cannot
-obtain an Ubicloud runner at all. A lane that names an Ubicloud runner
-therefore selects it by a runner-selection expression that falls back to the
-hosted pool for a fork, and states its own ceiling, because an Ubicloud runner
+obtain an Ubicloud runner at all. A Dependabot pull request is also kept off
+Ubicloud: hosted minutes cost nothing on a public repository. A lane that names
+an Ubicloud runner therefore selects it by a runner-selection expression that
+falls back to the hosted pool for a fork or a Dependabot pull request, and
+states its own ceiling, because an Ubicloud runner
 is a self-hosted just-in-time runner that GitHub's six-hour cap for hosted jobs
 does not bound.
 
@@ -23,6 +25,12 @@ from tests.workflow_reading import Document, jobs, load_document, read_workflow_
 REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parents[1]
 HOSTED_LABEL: typ.Final = "ubuntu-latest"
 FORK_CONDITION: typ.Final = "github.event.pull_request.head.repo.fork"
+#: The pull request's author, not `github.actor`: the actor changes when
+#: someone re-runs a job or pushes to the branch, which would flip the runner.
+DEPENDABOT_CONDITION: typ.Final = (
+    "github.event.pull_request.user.login == 'dependabot[bot]'"
+)
+HOSTED_CONDITION: typ.Final = f"({FORK_CONDITION} || {DEPENDABOT_CONDITION})"
 
 #: Every job that can land on Ubicloud: workflow, job, runner class and the
 #: ceiling it states in minutes (as text, since the reader loads scalars as
@@ -38,15 +46,22 @@ PLACEMENTS: typ.Final = (
     ),
 )
 
-#: The runner-selection shape: a condition, a quoted hosted arm and a quoted
-#: other arm.
+#: The runner-selection shape: a parenthesised condition, a quoted hosted arm
+#: and a quoted other arm. The condition may itself hold `||`, so it is matched
+#: up to its closing parenthesis.
 _SHAPE: typ.Final = re.compile(
-    r"\$\{\{\s*(?P<condition>[^&|]+?)\s*&&\s*'(?P<hosted>[^']*)'"
+    r"\$\{\{\s*(?P<condition>\(.+?\))\s*&&\s*'(?P<hosted>[^']*)'"
     r"\s*\|\|\s*'(?P<other>[^']*)'\s*\}\}"
 )
 
-type Origin = typ.Literal["push", "same-repository", "fork"]
-ORIGINS: typ.Final[tuple[Origin, ...]] = ("push", "same-repository", "fork")
+type Origin = typ.Literal["push", "same-repository", "fork", "dependabot"]
+ORIGINS: typ.Final[tuple[Origin, ...]] = (
+    "push",
+    "same-repository",
+    "fork",
+    "dependabot",
+)
+HOSTED_ORIGINS: typ.Final[frozenset[Origin]] = frozenset({"fork", "dependabot"})
 
 
 def runner_selection_expression(label: str) -> str:
@@ -61,9 +76,10 @@ def runner_selection_expression(label: str) -> str:
     -------
     str
         A `${{ ... }}` expression selecting `label` unless the run is a pull
-        request from a fork, which falls back to the hosted pool.
+        request from a fork or one opened by Dependabot, which fall back to the
+        hosted pool.
     """
-    return f"${{{{ {FORK_CONDITION} && '{HOSTED_LABEL}' || '{label}' }}}}"
+    return f"${{{{ {HOSTED_CONDITION} && '{HOSTED_LABEL}' || '{label}' }}}}"
 
 
 def selected_runner(runs_on: object, origin: Origin) -> str | None:
@@ -75,7 +91,8 @@ def selected_runner(runs_on: object, origin: Origin) -> str | None:
         The job's `runs-on` value as parsed.
     origin
         The kind of run: a push or dispatch (no pull request), a pull request
-        from this repository, or a pull request from a fork.
+        from this repository, a pull request from a fork, or a pull request
+        this repository's Dependabot opened.
 
     Returns
     -------
@@ -85,9 +102,9 @@ def selected_runner(runs_on: object, origin: Origin) -> str | None:
         cannot serve a fork.
     """
     shape = _SHAPE.fullmatch(runs_on.strip()) if isinstance(runs_on, str) else None
-    if shape is None or shape["condition"] != FORK_CONDITION:
+    if shape is None or shape["condition"] != HOSTED_CONDITION:
         return None
-    return shape["hosted" if origin == "fork" else "other"]
+    return shape["hosted" if origin in HOSTED_ORIGINS else "other"]
 
 
 def placement_faults(runs_on: object, label: str) -> list[str]:
@@ -103,10 +120,15 @@ def placement_faults(runs_on: object, label: str) -> list[str]:
     Returns
     -------
     list[str]
-        Empty when a fork falls back to hosted and every other run is on
-        `label`.
+        Empty when a fork and a Dependabot pull request fall back to hosted and
+        every other run is on `label`.
     """
-    wanted = {"push": label, "same-repository": label, "fork": HOSTED_LABEL}
+    wanted = {
+        "push": label,
+        "same-repository": label,
+        "fork": HOSTED_LABEL,
+        "dependabot": HOSTED_LABEL,
+    }
     return [
         f"{origin} selects {selected_runner(runs_on, origin)}, wanted {wanted[origin]}"
         for origin in ORIGINS
@@ -167,6 +189,7 @@ def placed_jobs(
         ("push", "ubicloud-standard-2"),
         ("same-repository", "ubicloud-standard-2"),
         ("fork", "ubuntu-latest"),
+        ("dependabot", "ubuntu-latest"),
     ],
 )
 def test_the_expression_places_each_run(origin: Origin, wanted: str) -> None:
@@ -177,7 +200,8 @@ def test_the_expression_places_each_run(origin: Origin, wanted: str) -> None:
     origin
         The kind of run.
     wanted
-        The label the run must select; only a fork's pull request is hosted.
+        The label the run must select; only a fork's or Dependabot's pull
+        request is hosted.
     """
     selected = selected_runner(
         runner_selection_expression("ubicloud-standard-2"), origin
@@ -189,29 +213,43 @@ def test_the_expression_places_each_run(origin: Origin, wanted: str) -> None:
     ("runs_on", "expected"),
     [
         (runner_selection_expression("ubicloud-standard-2"), 0),
-        ("ubuntu-latest", 3),
-        ("ubicloud-standard-2", 3),
+        ("ubuntu-latest", 4),
+        ("ubicloud-standard-2", 4),
         (
-            f"${{{{ {FORK_CONDITION} && 'ubicloud-standard-2' || 'ubuntu-latest' }}}}",
-            3,
+            (
+                f"${{{{ {HOSTED_CONDITION} && 'ubicloud-standard-2' "
+                "|| 'ubuntu-latest' }}"
+            ),
+            4,
         ),
         (runner_selection_expression("ubicloud-standard-4"), 2),
         (
             (
-                "${{ github.event_name == 'pull_request' && 'ubuntu-latest' "
+                "${{ (github.event_name == 'pull_request') && 'ubuntu-latest' "
                 "|| 'ubicloud-standard-2' }}"
             ),
-            3,
+            4,
         ),
         (
             (
-                f"${{{{ {FORK_CONDITION} && 'ubicloud-standard-2' "
+                f"${{{{ {HOSTED_CONDITION} && 'ubicloud-standard-2' "
                 "|| 'ubicloud-standard-2' }}"
             ),
-            1,
+            2,
         ),
-        (["ubicloud-standard-2"], 3),
-        (None, 3),
+        (
+            f"${{{{ {FORK_CONDITION} && 'ubuntu-latest' || 'ubicloud-standard-2' }}}}",
+            4,
+        ),
+        (
+            (
+                f"${{{{ ({FORK_CONDITION} || github.actor == 'dependabot[bot]') "
+                "&& 'ubuntu-latest' || 'ubicloud-standard-2' }}"
+            ),
+            4,
+        ),
+        (["ubicloud-standard-2"], 4),
+        (None, 4),
     ],
     ids=[
         "runner-selection",
@@ -220,7 +258,9 @@ def test_the_expression_places_each_run(origin: Origin, wanted: str) -> None:
         "inverted-arms",
         "another-label",
         "another-condition",
-        "fork-kept-on-ubicloud",
+        "hosted-origins-kept-on-ubicloud",
+        "dependabot-arm-missing",
+        "actor-instead-of-author",
         "sequence",
         "not-a-string",
     ],
