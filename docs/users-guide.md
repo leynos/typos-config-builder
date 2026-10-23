@@ -309,6 +309,10 @@ invocation. Entries under `[phrases.corrections]` are never rendered, because
 Typos tokenizes hyphenated phrases as separate words and would silently ignore
 them; the gate applies them itself.
 
+The phrase check considers regular tracked files up to 1 MiB. It skips larger
+files, binary content, symlinks, and paths that resolve outside the repository.
+This per-file size limit bounds the time and memory spent checking each input.
+
 ## Deliberate limits
 
 The package runs the pinned Typos binary and enforces the shared phrase

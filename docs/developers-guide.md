@@ -103,6 +103,11 @@ scanner moves on to the next file. Repositories legitimately track images,
 fonts, archives, and compiled artefacts, and failing on them would fail the
 gate in any such repository.
 
+Regular tracked files larger than 1 MiB are also skipped. `is_scannable` checks
+their metadata before opening them, and `read_tracked_text` caps each read at
+one byte beyond the limit to catch a file that grows during the scan. This
+limit intentionally defines which tracked text the phrase check examines.
+
 The phrase scan still fails closed on a read error: an unreadable tracked file
 raises `PhraseScanError` with the `OSError` chained, rather than being skipped,
 because that signals the worktree changed under the scan and a silent skip

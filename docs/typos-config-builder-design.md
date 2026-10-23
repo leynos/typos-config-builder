@@ -59,8 +59,10 @@ The CLI exposes three commands over the same pipeline stages:
 `gate` accepts a `--scope` option selecting which tracked files Typos receives:
 `markdown` (the default) restricts Typos to files with the `.md` suffix, and
 `all` passes every tracked file, including hidden ones. The phrase check always
-scans every tracked file regardless of `--scope`, because phrase corrections
-apply to any tracked text.
+checks every tracked file regardless of `--scope`, because phrase corrections
+apply to any tracked text. It skips non-regular files, paths outside the
+worktree, binary content, and regular files larger than 1 MiB so each input has
+a documented resource bound.
 
 ## 4. Boundaries
 
