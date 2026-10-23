@@ -308,19 +308,19 @@ def test_read_failure_is_wrapped_with_the_tracked_path(
 def test_ordinary_utf8_text_still_reports_phrase_findings(
     tmp_path: pathlib.Path,
 ) -> None:
-    """Eligible UTF-8 prose still receives the configured phrase finding."""
+    """CR-only UTF-8 prose retains the correct phrase finding line number."""
     repository = build_repository(
         tmp_path,
         {
             ".typos-oxendict-base.toml": cache_text(),
-            "README.md": f"Prefer {PROHIBITED}.\n",
+            "README.md": f"Introductory prose.\rPrefer {PROHIBITED}.\r",
         },
     )
 
     findings = phrases.find_phrases(repository, phrases.load_policy(repository))
 
     assert findings == (
-        phrases.PhraseFinding(pathlib.Path("README.md"), 1, 8, PROHIBITED, CORRECTION),
+        phrases.PhraseFinding(pathlib.Path("README.md"), 2, 8, PROHIBITED, CORRECTION),
     )
 
 

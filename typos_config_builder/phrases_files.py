@@ -17,6 +17,7 @@ deliberately excluded from logs.
 
 from __future__ import annotations
 
+import io
 import logging
 import os
 import pathlib
@@ -305,7 +306,8 @@ def read_tracked_text(path: pathlib.Path, relative: pathlib.Path) -> str | None:
                 },
             )
             return None
-        return content.decode("utf-8")
+        with io.TextIOWrapper(io.BytesIO(content), encoding="utf-8") as text_stream:
+            return text_stream.read()
     except UnicodeDecodeError:
         LOGGER.debug(
             "Phrase scan skipped a tracked file",
