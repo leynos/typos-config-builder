@@ -18,8 +18,10 @@ deliberately excluded from logs.
 from __future__ import annotations
 
 import logging
+import os
 import pathlib
 import shutil
+import stat
 
 # The phrase gate enumerates tracked files through Git by design; the
 # command is resolved from PATH and its arguments are never user text.
@@ -45,6 +47,10 @@ POLICY_PATHS = frozenset({
     pathlib.Path(builder.OVERLAY_NAME),
     pathlib.Path(builder.OUTPUT_NAME),
 })
+
+# One MiB bounds the memory and time spent on a tracked-file read; larger files
+# are skipped because they are not useful prose inputs for phrase checking.
+MAX_FILE_SIZE_BYTES = 1024 * 1024
 
 
 class PhraseScanError(Exception):
@@ -163,8 +169,8 @@ def is_inside_worktree(candidate: pathlib.Path, root: pathlib.Path) -> bool:
 def is_scannable(candidate: pathlib.Path, root: pathlib.Path) -> bool:
     """Report whether a tracked path is a file lying inside the worktree.
 
-    A directory at a tracked path is an anomaly rather than text, so it is
-    excluded from anything handed to an external checker.
+    Symlinks, non-regular entries, and files above the input bound are skipped
+    before either spelling checker opens the path.
 
     Parameters
     ----------
@@ -176,7 +182,14 @@ def is_scannable(candidate: pathlib.Path, root: pathlib.Path) -> bool:
     Returns
     -------
     bool
-        True when the path may be submitted as tracked text.
+        True when the path is a bounded regular file inside the worktree.
+
+    Raises
+    ------
+    IsADirectoryError
+        If a tracked file was replaced by a directory.
+    OSError
+        If metadata for the tracked path cannot be read.
 
     Examples
     --------
@@ -184,7 +197,14 @@ def is_scannable(candidate: pathlib.Path, root: pathlib.Path) -> bool:
     >>> is_scannable(root / "README.md", root)  # doctest: +SKIP
     True
     """
-    return is_inside_worktree(candidate, root) and not candidate.is_dir()
+    file_stat = os.lstat(candidate)
+    if stat.S_ISDIR(file_stat.st_mode):
+        raise IsADirectoryError(candidate)
+    if stat.S_ISLNK(file_stat.st_mode) or not stat.S_ISREG(file_stat.st_mode):
+        return False
+    if file_stat.st_size > MAX_FILE_SIZE_BYTES:
+        return False
+    return is_inside_worktree(candidate, root)
 
 
 def select_scannable(
@@ -213,9 +233,14 @@ def select_scannable(
     ()
     """
     root = repository.resolve()
-    return tuple(
-        relative for relative in relatives if is_scannable(repository / relative, root)
-    )
+    selected = []
+    for relative in relatives:
+        try:
+            if is_scannable(repository / relative, root):
+                selected.append(relative)
+        except IsADirectoryError:
+            continue
+    return tuple(selected)
 
 
 def read_tracked_text(path: pathlib.Path, relative: pathlib.Path) -> str | None:
@@ -223,8 +248,10 @@ def read_tracked_text(path: pathlib.Path, relative: pathlib.Path) -> str | None:
 
     Repositories track images, fonts, archives, and compiled artefacts. Such
     content carries no prose for a phrase check to examine, so it is skipped
-    rather than failing the scan. A read error is a different matter: the
-    worktree has changed under the scan, which must fail closed.
+    rather than failing the scan. Oversized files are also skipped, and the
+    read is capped at one byte beyond the limit in case a file grows after its
+    metadata was checked. A read error is a different matter: the worktree has
+    changed under the scan, which must fail closed.
 
     Parameters
     ----------
@@ -236,7 +263,8 @@ def read_tracked_text(path: pathlib.Path, relative: pathlib.Path) -> str | None:
     Returns
     -------
     str | None
-        Decoded file contents, or None when the bytes are not UTF-8.
+        Decoded bounded contents, or None when the file is oversized or not
+        UTF-8.
 
     Raises
     ------
@@ -255,7 +283,19 @@ def read_tracked_text(path: pathlib.Path, relative: pathlib.Path) -> str | None:
     True
     """
     try:
-        return path.read_text(encoding="utf-8")
+        with path.open("rb") as source:
+            content = source.read(MAX_FILE_SIZE_BYTES + 1)
+        if len(content) > MAX_FILE_SIZE_BYTES:
+            LOGGER.debug(
+                "Phrase scan skipped a tracked file",
+                extra={
+                    "operation": "phrase-scan",
+                    "decision": "skipped-oversized",
+                    "error_class": "size-limit",
+                },
+            )
+            return None
+        return content.decode("utf-8")
     except UnicodeDecodeError:
         LOGGER.debug(
             "Phrase scan skipped a tracked file",
