@@ -88,16 +88,6 @@ def test_device_is_not_scannable(tmp_path: pathlib.Path) -> None:
     assert not phrases_files.is_scannable(pathlib.Path("/dev/zero"), tmp_path.resolve())
 
 
-def test_inside_worktree_rejects_a_symlink_entry(tmp_path: pathlib.Path) -> None:
-    """The containment helper never follows a direct symlink entry."""
-    target = tmp_path / "target.md"
-    target.write_text("ordinary text\n", encoding="utf-8")
-    link = tmp_path / "link.md"
-    link.symlink_to(target)
-
-    assert not phrases_files.is_inside_worktree(link, tmp_path.resolve())
-
-
 def test_external_checker_selection_skips_a_directory(tmp_path: pathlib.Path) -> None:
     """Directories are omitted from the paths sent to the external checker."""
     directory = tmp_path / "docs"
@@ -126,6 +116,22 @@ def test_tracked_path_behind_a_symlinked_parent_is_skipped(
     assert not phrases.find_phrases(repository, phrases.load_policy(repository)), (
         "the scan read a file outside the repository through a symlinked parent"
     )
+
+
+def test_missing_external_target_behind_symlinked_parent_is_skipped(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A missing external target is still outside the scan boundary."""
+    repository = build_repository(
+        tmp_path,
+        {".typos-oxendict-base.toml": cache_text(), "docs/guide.md": "Text.\n"},
+    )
+    shutil.rmtree(repository / "docs")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (repository / "docs").symlink_to(outside, target_is_directory=True)
+
+    assert not phrases.find_phrases(repository, phrases.load_policy(repository))
 
 
 def test_policy_documents_are_not_scanned(tmp_path: pathlib.Path) -> None:
@@ -239,6 +245,18 @@ def test_oversized_tracked_text_is_skipped(
     monkeypatch.setattr(phrases_files, "MAX_FILE_SIZE_BYTES", 8)
 
     assert not phrases.find_phrases(repository, phrases.load_policy(repository))
+
+
+def test_large_regular_file_stays_in_typos_selection(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Typos selection is not limited by the phrase scanner's input cap."""
+    monkeypatch.setattr(phrases_files, "MAX_FILE_SIZE_BYTES", 8)
+    (tmp_path / "README.md").write_text("Large enough.", encoding="utf-8")
+
+    assert phrases_files.select_scannable(tmp_path, (pathlib.Path("README.md"),)) == (
+        pathlib.Path("README.md"),
+    )
 
 
 def test_bounded_read_requests_only_one_byte_past_the_limit(

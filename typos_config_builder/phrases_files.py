@@ -166,11 +166,17 @@ def is_inside_worktree(candidate: pathlib.Path, root: pathlib.Path) -> bool:
     return candidate.resolve().is_relative_to(root)
 
 
-def is_scannable(candidate: pathlib.Path, root: pathlib.Path) -> bool:
+def is_scannable(
+    candidate: pathlib.Path,
+    root: pathlib.Path,
+    *,
+    max_file_size_bytes: int | None = None,
+) -> bool:
     """Report whether a tracked path is a file lying inside the worktree.
 
-    Symlinks, non-regular entries, and files above the input bound are skipped
-    before either spelling checker opens the path.
+    Symlinks and non-regular entries are skipped before either spelling
+    checker opens the path. A size bound can be supplied by the phrase
+    scanner; Typos selection does not apply that bound.
 
     Parameters
     ----------
@@ -178,11 +184,15 @@ def is_scannable(candidate: pathlib.Path, root: pathlib.Path) -> bool:
         Absolute path to the tracked file on disk.
     root
         Resolved worktree the path must remain within.
+    max_file_size_bytes
+        Optional maximum size for a phrase-scan input. When absent, regular
+        files are not excluded by size.
 
     Returns
     -------
     bool
-        True when the path is a bounded regular file inside the worktree.
+        True when the path is a regular file inside the worktree and within
+        the optional size bound.
 
     Raises
     ------
@@ -197,14 +207,14 @@ def is_scannable(candidate: pathlib.Path, root: pathlib.Path) -> bool:
     >>> is_scannable(root / "README.md", root)  # doctest: +SKIP
     True
     """
+    if not is_inside_worktree(candidate, root):
+        return False
     file_stat = os.lstat(candidate)
     if stat.S_ISDIR(file_stat.st_mode):
         raise IsADirectoryError(candidate)
     if stat.S_ISLNK(file_stat.st_mode) or not stat.S_ISREG(file_stat.st_mode):
         return False
-    if file_stat.st_size > MAX_FILE_SIZE_BYTES:
-        return False
-    return is_inside_worktree(candidate, root)
+    return max_file_size_bytes is None or file_stat.st_size <= max_file_size_bytes
 
 
 def select_scannable(
