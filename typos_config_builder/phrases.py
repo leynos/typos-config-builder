@@ -20,13 +20,12 @@ import typing as typ
 
 import pathspec
 
-from typos_config_builder import builder
+from typos_config_builder import builder, phrases_files
 from typos_config_builder import patterns as pattern_policy
 from typos_config_builder import policy as policy_document
 from typos_config_builder.phrases_files import (
     POLICY_PATHS,
     PhraseScanError,
-    is_inside_worktree,
     read_tracked_text,
     tracked_files,
 )
@@ -337,7 +336,15 @@ def find_phrases(
         if relative in POLICY_PATHS or exclusions.match_file(relative.as_posix()):
             continue
         candidate = repository / relative
-        if not is_inside_worktree(candidate, root):
+        try:
+            eligible = phrases_files.is_scannable(
+                candidate,
+                root,
+                max_file_size_bytes=phrases_files.MAX_FILE_SIZE_BYTES,
+            )
+        except OSError as error:
+            raise PhraseScanError(relative) from error
+        if not eligible:
             continue
         text = read_tracked_text(candidate, relative)
         if text is None:
