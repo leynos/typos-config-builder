@@ -227,16 +227,19 @@ runs-on: >-
 A pull request from a fork cannot obtain an Ubicloud runner, so it falls back to
 `ubuntu-latest`. So does a pull request Dependabot opened: hosted minutes cost
 nothing on a public repository, and Dependabot opens many pull requests. The
-expression tests the pull request's author, not `github.actor`, because the
-actor changes when someone re-runs a job or pushes to the branch, which would
-flip the runner. A push and a dispatch have no pull request, so both values are
-null and they select Ubicloud; a Dependabot pull request therefore builds cold
-on the hosted pool. A push to `main` runs both lanes, so main writes the
-Ubicloud cache scope a pull request reads, on the same class as the reader.
-Ubicloud's cache proxy is scoped by ref, so a pull request's lane reads a warm
-main scope only when a main job on Ubicloud writes it. A fork's pull request
-restores a hosted cache that main no longer refreshes; fork pull requests are
-rare here, and a second hosted writer would pay double on every main push.
+expression tests the pull request's author, not `github.actor`. For a new run,
+a person pushing to a Dependabot branch changes `github.actor` and would flip
+an actor-based check. On a re-run `github.actor` remains the original actor, and
+`github.triggering_actor` names whoever clicked re-run, so the author is the
+only stable test. A push and a dispatch have no pull request, so both values
+are empty strings (falsy) and the expression selects Ubicloud; a Dependabot
+pull request therefore builds cold on the hosted pool. A push to `main` runs
+both lanes, so main writes the Ubicloud cache scope a pull request reads, on
+the same class as the reader. Ubicloud's cache proxy is scoped by ref, so a
+pull request's lane reads a warm main scope only when a main job on Ubicloud
+writes it. A fork's pull request restores a hosted cache that main no longer
+refreshes; fork pull requests are rare here, and a second hosted writer would
+pay double on every main push.
 
 An Ubicloud runner is a self-hosted just-in-time runner, so GitHub's six-hour
 cap for hosted jobs does not bound it and a hung job would hold a billable

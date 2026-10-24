@@ -25,8 +25,9 @@ from tests.workflow_reading import Document, jobs, load_document, read_workflow_
 REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parents[1]
 HOSTED_LABEL: typ.Final = "ubuntu-latest"
 FORK_CONDITION: typ.Final = "github.event.pull_request.head.repo.fork"
-#: The pull request's author, not `github.actor`: the actor changes when
-#: someone re-runs a job or pushes to the branch, which would flip the runner.
+#: The pull request's author, not `github.actor`: the actor is whoever
+#: triggered the run, so a person pushing to a Dependabot branch would flip
+#: the runner.
 DEPENDABOT_CONDITION: typ.Final = (
     "github.event.pull_request.user.login == 'dependabot[bot]'"
 )
@@ -46,7 +47,7 @@ PLACEMENTS: typ.Final = (
     ),
 )
 
-#: The runner-selection shape: a parenthesised condition, a quoted hosted arm
+#: The runner-selection shape: a parenthesized condition, a quoted hosted arm
 #: and a quoted other arm. The condition may itself hold `||`, so it is matched
 #: up to its closing parenthesis.
 _SHAPE: typ.Final = re.compile(
