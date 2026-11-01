@@ -60,9 +60,12 @@ The CLI exposes three commands over the same pipeline stages:
 `markdown` (the default) restricts Typos to files with the `.md` suffix, and
 `all` passes every tracked file, including hidden ones. The phrase check always
 checks every tracked file regardless of `--scope`, because phrase corrections
-apply to any tracked text. It skips non-regular files, paths outside the
-worktree, binary content, and regular files larger than 1 MiB so each input has
-a documented resource bound.
+apply to any tracked text. It skips symlinks, non-regular entries other than a
+directory that replaced a tracked file, paths outside the worktree, binary
+content, and regular files larger than 1 MiB. A tracked file replaced by a
+directory fails the scan closed because it indicates worktree drift. Each
+ineligible-file decision uses a fixed log category without tracked paths or
+file contents, keeping diagnostics bounded.
 
 ## 4. Boundaries
 

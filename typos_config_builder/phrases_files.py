@@ -12,7 +12,8 @@ entry cannot be opened, because a silent skip there hides exactly the files
 most likely to have drifted.
 
 Diagnostics expose only bounded decisions; tracked paths and file contents are
-deliberately excluded from logs.
+deliberately excluded from logs. Phrase-scan outcomes use fixed reason
+categories so rejected inputs remain observable without exposing their names.
 """
 
 from __future__ import annotations
@@ -52,6 +53,36 @@ POLICY_PATHS = frozenset({
 # One MiB bounds the memory and time spent on a tracked-file read; larger files
 # are skipped because they are not useful prose inputs for phrase checking.
 MAX_FILE_SIZE_BYTES = 1024 * 1024
+
+
+def _log_phrase_scan_decision(
+    decision: str, error_class: str, *, enabled: bool = True
+) -> None:
+    """Record a path-free phrase-scan decision with fixed fields.
+
+    Parameters
+    ----------
+    decision
+        Fixed outcome category such as ``skipped-symlink``.
+    error_class
+        Fixed reason category such as ``non-regular``.
+    enabled
+        Whether the phrase scanner owns the decision being recorded.
+
+    Examples
+    --------
+    >>> _log_phrase_scan_decision("skipped-symlink", "symlink")  # doctest: +SKIP
+    """
+    if not enabled:
+        return
+    LOGGER.debug(
+        "Phrase scan decision",
+        extra={
+            "operation": "phrase-scan",
+            "decision": decision,
+            "error_class": error_class,
+        },
+    )
 
 
 class PhraseScanError(Exception):
@@ -176,8 +207,9 @@ def is_scannable(
     """Report whether a tracked path is a file lying inside the worktree.
 
     Symlinks and non-regular entries are skipped before either spelling
-    checker opens the path. A size bound can be supplied by the phrase
-    scanner; Typos selection does not apply that bound.
+    checker opens the path. Replacing a tracked file with a directory raises
+    because it indicates worktree drift. A size bound can be supplied by the
+    phrase scanner; Typos selection does not apply that bound.
 
     Parameters
     ----------
@@ -208,14 +240,37 @@ def is_scannable(
     >>> is_scannable(root / "README.md", root)  # doctest: +SKIP
     True
     """
+    if candidate.is_symlink():
+        _log_phrase_scan_decision(
+            "skipped-symlink", "symlink", enabled=max_file_size_bytes is not None
+        )
+        return False
     if not is_inside_worktree(candidate, root):
+        _log_phrase_scan_decision(
+            "skipped-outside-worktree",
+            "containment",
+            enabled=max_file_size_bytes is not None,
+        )
         return False
     file_stat = os.lstat(candidate)
     if stat.S_ISDIR(file_stat.st_mode):
+        _log_phrase_scan_decision(
+            "failed-directory-replacement",
+            "directory",
+            enabled=max_file_size_bytes is not None,
+        )
         raise IsADirectoryError(candidate)
-    if stat.S_ISLNK(file_stat.st_mode) or not stat.S_ISREG(file_stat.st_mode):
+    if not stat.S_ISREG(file_stat.st_mode):
+        _log_phrase_scan_decision(
+            "skipped-non-regular",
+            "non-regular",
+            enabled=max_file_size_bytes is not None,
+        )
         return False
-    return max_file_size_bytes is None or file_stat.st_size <= max_file_size_bytes
+    if max_file_size_bytes is not None and file_stat.st_size > max_file_size_bytes:
+        _log_phrase_scan_decision("skipped-oversized", "size-limit", enabled=True)
+        return False
+    return True
 
 
 def select_scannable(
@@ -297,26 +352,13 @@ def read_tracked_text(path: pathlib.Path, relative: pathlib.Path) -> str | None:
         with path.open("rb") as source:
             content = source.read(MAX_FILE_SIZE_BYTES + 1)
         if len(content) > MAX_FILE_SIZE_BYTES:
-            LOGGER.debug(
-                "Phrase scan skipped a tracked file",
-                extra={
-                    "operation": "phrase-scan",
-                    "decision": "skipped-oversized",
-                    "error_class": "size-limit",
-                },
-            )
+            _log_phrase_scan_decision("skipped-oversized", "size-limit")
             return None
         with io.TextIOWrapper(io.BytesIO(content), encoding="utf-8") as text_stream:
             return text_stream.read()
     except UnicodeDecodeError:
-        LOGGER.debug(
-            "Phrase scan skipped a tracked file",
-            extra={
-                "operation": "phrase-scan",
-                "decision": "skipped-binary",
-                "error_class": "not-utf-8",
-            },
-        )
+        _log_phrase_scan_decision("skipped-binary", "not-utf-8")
         return None
     except OSError as error:
+        _log_phrase_scan_decision("failed-read", "file-system")
         raise PhraseScanError(relative) from error
