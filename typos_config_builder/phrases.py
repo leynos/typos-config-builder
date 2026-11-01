@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import bisect
 import dataclasses as dc
+import logging
 import re
 import typing as typ
 
@@ -49,6 +50,19 @@ __all__ = [
 ]
 
 _MARKED = 1
+LOGGER = logging.getLogger(__name__)
+
+
+def _log_phrase_scan_decision(decision: str, error_class: str) -> None:
+    """Log fixed outcomes such as ``('skipped-symlink', 'symlink')``."""
+    LOGGER.debug(
+        "Phrase scan decision",
+        extra={
+            "operation": "phrase-scan",
+            "decision": decision,
+            "error_class": error_class,
+        },
+    )
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -286,6 +300,39 @@ def scan_text(
     return _Scanner.from_policy(policy).scan(path, text)
 
 
+def _read_scannable_text(
+    candidate: pathlib.Path,
+    relative: pathlib.Path,
+    root: pathlib.Path,
+) -> str | None:
+    """Return tracked UTF-8 text, such as the prose stored in ``README.md``."""
+    try:
+        eligibility = phrases_files.scan_eligibility(
+            candidate,
+            root,
+            max_file_size_bytes=phrases_files.MAX_FILE_SIZE_BYTES,
+        )
+    except OSError as error:
+        _log_phrase_scan_decision("failed-metadata", "file-system")
+        raise PhraseScanError(relative) from error
+    if not eligibility.is_eligible:
+        _log_phrase_scan_decision(eligibility.decision, eligibility.error_class)
+        if eligibility.decision == "failed-directory-replacement":
+            raise PhraseScanError(relative) from IsADirectoryError(candidate)
+        return None
+    try:
+        tracked_text = read_tracked_text(candidate, relative)
+    except PhraseScanError:
+        _log_phrase_scan_decision("failed-read", "file-system")
+        raise
+    if tracked_text.text is None:
+        _log_phrase_scan_decision(
+            tracked_text.outcome.decision,
+            tracked_text.outcome.error_class,
+        )
+    return tracked_text.text
+
+
 def find_phrases(
     repository: pathlib.Path, policy: PhrasePolicy
 ) -> tuple[PhraseFinding, ...]:
@@ -336,18 +383,7 @@ def find_phrases(
         if relative in POLICY_PATHS or exclusions.match_file(relative.as_posix()):
             continue
         candidate = repository / relative
-        try:
-            eligible = phrases_files.is_scannable(
-                candidate,
-                root,
-                max_file_size_bytes=phrases_files.MAX_FILE_SIZE_BYTES,
-            )
-        except OSError as error:
-            raise PhraseScanError(relative) from error
-        if not eligible:
-            continue
-        text = read_tracked_text(candidate, relative)
-        if text is None:
-            continue
-        findings.extend(scanner.scan(relative, text))
+        tracked_text = _read_scannable_text(candidate, relative, root)
+        if tracked_text is not None:
+            findings.extend(scanner.scan(relative, tracked_text))
     return tuple(findings)

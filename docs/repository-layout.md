@@ -12,7 +12,8 @@ This reference identifies the small set of paths that define the builder.
   that Typos cannot express. `typos_config_builder/phrases_files.py` owns
   tracked-file selection for it (the Git listing, the policy-file and escape
   checks, and fail-closed reading) and is the only module that shells out to
-  Git.
+  Git. `typos_config_builder/phrase_scan_results.py` defines the fixed
+  eligibility and read outcomes passed from file selection to phrase scanning.
 - `typos_config_builder/gate.py` runs the whole gate: generation, the pinned
   Typos binary, and the phrase check. It is the package's only other module
   that starts a subprocess, and the process it starts is Typos.

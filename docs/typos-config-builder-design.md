@@ -59,13 +59,15 @@ The CLI exposes three commands over the same pipeline stages:
 `gate` accepts a `--scope` option selecting which tracked files Typos receives:
 `markdown` (the default) restricts Typos to files with the `.md` suffix, and
 `all` passes every tracked file, including hidden ones. The phrase check always
-checks every tracked file regardless of `--scope`, because phrase corrections
-apply to any tracked text. It skips symlinks, non-regular entries other than a
-directory that replaced a tracked file, paths outside the worktree, binary
-content, and regular files larger than 1 MiB. A tracked file replaced by a
-directory fails the scan closed because it indicates worktree drift. Each
-ineligible-file decision uses a fixed log category without tracked paths or
-file contents, keeping diagnostics bounded.
+checks every tracked file regardless of `--scope` because phrase corrections
+apply to any tracked text. It skips symlinks, non-regular entries such as FIFOs
+and devices, paths outside the worktree, binary content, and regular files
+larger than 1 MiB. A tracked file replaced by a directory fails the scan closed
+because it indicates worktree drift. The file layer returns fixed typed
+eligibility and read outcomes without logging. `is_scannable` adapts
+eligibility to a boolean for uncapped Typos selection; `phrases.find_phrases`
+consumes the outcomes and emits path-free diagnostics without repeating
+filesystem checks.
 
 ## 4. Boundaries
 

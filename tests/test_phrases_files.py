@@ -285,7 +285,7 @@ def test_bounded_read_requests_only_one_byte_past_the_limit(
         tmp_path / "README.md", pathlib.Path("README.md")
     )
 
-    assert actual is None, "the extra byte must make a growing file ineligible"
+    assert actual.text is None, "the extra byte must make a growing file ineligible"
     assert requested_sizes == [9], "the bounded read must stop one byte past its limit"
 
 

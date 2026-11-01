@@ -32,7 +32,9 @@ The package keeps a small, acyclic dependency graph:
 
 - `cli` imports `builder`, `phrases`, and `gate`.
 - `gate` imports `builder` and `phrases`.
-- `phrases` imports `builder`, `policy`, `patterns`, and `phrases_files`.
+- `phrases` imports `builder`, `policy`, `patterns`, and `phrases_files`;
+  `phrases_files` imports the leaf `phrase_scan_results` module for its fixed
+  eligibility and read outcomes.
 - `builder` imports `cache`, `policy`, and `render`.
 - `cache` imports `http` (as a function-local import, to keep the module
   loadable without pulling in the HTTPS stack at import time), and `http`
@@ -67,10 +69,10 @@ files through `phrases.tracked_files`, which delegates to `phrases_files.py`.
 
 Keep each module under four hundred lines; split a module into a sibling before
 appending further behaviour once it approaches the limit. Headroom is thin in
-two modules: `gate.py` sits at 389 lines, and `remote.py`, which owns the HTTPS
-path, the bounded response read, the cache-identity checks, and the bounded
-refresh diagnostics, sits at 371 lines. Prefer a new sibling module over
-growing either one further. `GateOptions` groups the authority, cache policy,
+`gate.py` and `phrases.py`, each at 389 lines, and `remote.py`, which owns the
+HTTPS path, the bounded response read, the cache-identity checks, and the
+bounded refresh diagnostics, at 371 lines. Prefer a new sibling module over
+growing any of these further. `GateOptions` groups the authority, cache policy,
 and scope because `gate` would otherwise exceed the repository's four-argument
 limit once the runner seam is included. The runner seam is a `typ.Protocol`
 naming only the subset of `subprocess.run` the gate uses, so a test records
@@ -97,16 +99,19 @@ selection rule in `policy.py` and the emission in a small helper in
 ### Fail-closed and worktree-escape rules
 
 A tracked file whose bytes are not UTF-8 is binary as far as a phrase check is
-concerned, so `read_tracked_text` returns `None` after logging one bounded
-`phrase-scan` decision carrying neither the path nor any content, and the
-scanner moves on to the next file. Repositories legitimately track images,
-fonts, archives, and compiled artefacts, and failing on them would fail the
-gate in any such repository.
+concerned, so `read_tracked_text` returns an internal result with no text and a
+fixed read outcome, without logging. The scanner then moves on to the next file.
+`is_scannable` and `read_tracked_text` stay silent; `phrases.find_phrases`
+emits path-free `phrase-scan` diagnostics at the orchestration boundary.
+Repositories legitimately track images, fonts, archives, and compiled
+artefacts, and failing on them would fail the gate in any such repository.
 
-Regular tracked files larger than 1 MiB are also skipped. `is_scannable` checks
-their metadata before opening them, and `read_tracked_text` caps each read at
-one byte beyond the limit to catch a file that grows during the scan. This
-limit intentionally defines which tracked text the phrase check examines.
+Regular tracked files larger than 1 MiB are also skipped by the phrase scan.
+`scan_eligibility` applies the limit when `phrases.find_phrases` supplies it;
+`is_scannable` is uncapped by default for Typos selection. `read_tracked_text`
+caps each read at one byte beyond the limit to catch a file that grows during
+the scan. This limit intentionally defines which tracked text the phrase check
+examines.
 
 The phrase scan still fails closed on a read error: an unreadable tracked file
 raises `PhraseScanError` with the `OSError` chained, rather than being skipped,
@@ -121,8 +126,9 @@ Tracked files are enumerated with their index modes, and submodule gitlinks
 Typos run ever sees them. A remaining tracked path is skipped, not read, when
 it is a symlink or when resolving it lands outside the worktree through a
 symlinked parent, so neither stage can follow a link out of the repository it
-was asked to check. A tracked file that has been replaced by a directory is an
-error, not a skip, because that is a worktree anomaly rather than policy.
+was asked to check. For the phrase scan, a tracked file replaced by a directory
+is an error, not a skip, because that is a worktree anomaly rather than policy.
+Typos selection skips such a path.
 
 Typos execution is in scope per the amendment to
 [ADR 0001](adrs/0001-keep-the-builder-focused.md): running the pinned Typos

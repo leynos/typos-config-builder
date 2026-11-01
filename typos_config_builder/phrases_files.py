@@ -6,20 +6,16 @@ documents, symlinks, submodule gitlinks, and the worktree boundary. Keeping it
 here leaves :mod:`typos_config_builder.phrases` to the matching itself.
 
 Content that is not valid UTF-8 is binary as far as a phrase check is
-concerned, so it is skipped with a bounded diagnostic. Selection still fails
-closed on a read error, which means the worktree changed under the scan or an
-entry cannot be opened, because a silent skip there hides exactly the files
-most likely to have drifted.
-
-Diagnostics expose only bounded decisions; tracked paths and file contents are
-deliberately excluded from logs. Phrase-scan outcomes use fixed reason
-categories so rejected inputs remain observable without exposing their names.
+concerned, so it is skipped. Selection still fails closed on a read error,
+which means the worktree changed under the scan or an entry cannot be opened,
+because a silent skip there hides exactly the files most likely to have
+drifted. The phrase orchestration layer logs fixed, path-free outcomes returned
+by these helpers.
 """
 
 from __future__ import annotations
 
 import io
-import logging
 import os
 import pathlib
 import shutil
@@ -31,11 +27,14 @@ import subprocess  # ruff: ignore[suspicious-subprocess-import]
 import typing as typ
 
 from typos_config_builder import builder
+from typos_config_builder.phrase_scan_results import (
+    ReadOutcome,
+    ScanEligibility,
+    TrackedTextRead,
+)
 
 if typ.TYPE_CHECKING:
     import collections.abc as cabc
-
-LOGGER = logging.getLogger(__name__)
 
 #: Index mode Git records for a submodule gitlink. A gitlink names a commit in
 #: another repository rather than tracked text, so no stage may submit it.
@@ -53,36 +52,6 @@ POLICY_PATHS = frozenset({
 # One MiB bounds the memory and time spent on a tracked-file read; larger files
 # are skipped because they are not useful prose inputs for phrase checking.
 MAX_FILE_SIZE_BYTES = 1024 * 1024
-
-
-def _log_phrase_scan_decision(
-    decision: str, error_class: str, *, enabled: bool = True
-) -> None:
-    """Record a path-free phrase-scan decision with fixed fields.
-
-    Parameters
-    ----------
-    decision
-        Fixed outcome category such as ``skipped-symlink``.
-    error_class
-        Fixed reason category such as ``non-regular``.
-    enabled
-        Whether the phrase scanner owns the decision being recorded.
-
-    Examples
-    --------
-    >>> _log_phrase_scan_decision("skipped-symlink", "symlink")  # doctest: +SKIP
-    """
-    if not enabled:
-        return
-    LOGGER.debug(
-        "Phrase scan decision",
-        extra={
-            "operation": "phrase-scan",
-            "decision": decision,
-            "error_class": error_class,
-        },
-    )
 
 
 class PhraseScanError(Exception):
@@ -240,37 +209,62 @@ def is_scannable(
     >>> is_scannable(root / "README.md", root)  # doctest: +SKIP
     True
     """
+    eligibility = scan_eligibility(
+        candidate, root, max_file_size_bytes=max_file_size_bytes
+    )
+    if eligibility is ScanEligibility.DIRECTORY_REPLACEMENT:
+        raise IsADirectoryError(candidate)
+    return eligibility.is_eligible
+
+
+def scan_eligibility(
+    candidate: pathlib.Path,
+    root: pathlib.Path,
+    *,
+    max_file_size_bytes: int | None = None,
+) -> ScanEligibility:
+    """Classify one tracked path without logging or opening its contents.
+
+    :func:`is_scannable` adapts this result for Typos selection, which remains
+    uncapped. :func:`phrases.find_phrases` consumes it for path-free logging.
+
+    Parameters
+    ----------
+    candidate
+        Absolute path whose tracked-file eligibility is being checked.
+    root
+        Resolved repository root that contains eligible files.
+    max_file_size_bytes
+        Optional size limit; ``None`` leaves the input uncapped for Typos.
+
+    Returns
+    -------
+    ScanEligibility
+        Fixed category and reason for the candidate's eligibility.
+
+    Raises
+    ------
+    OSError
+        If resolving the candidate or reading its filesystem metadata fails.
+
+    Examples
+    --------
+    >>> root = pathlib.Path(".").resolve()
+    >>> scan_eligibility(root / "README.md", root).is_eligible  # doctest: +SKIP
+    True
+    """
     if candidate.is_symlink():
-        _log_phrase_scan_decision(
-            "skipped-symlink", "symlink", enabled=max_file_size_bytes is not None
-        )
-        return False
+        return ScanEligibility.SYMLINK
     if not is_inside_worktree(candidate, root):
-        _log_phrase_scan_decision(
-            "skipped-outside-worktree",
-            "containment",
-            enabled=max_file_size_bytes is not None,
-        )
-        return False
+        return ScanEligibility.OUTSIDE_WORKTREE
     file_stat = os.lstat(candidate)
     if stat.S_ISDIR(file_stat.st_mode):
-        _log_phrase_scan_decision(
-            "failed-directory-replacement",
-            "directory",
-            enabled=max_file_size_bytes is not None,
-        )
-        raise IsADirectoryError(candidate)
+        return ScanEligibility.DIRECTORY_REPLACEMENT
     if not stat.S_ISREG(file_stat.st_mode):
-        _log_phrase_scan_decision(
-            "skipped-non-regular",
-            "non-regular",
-            enabled=max_file_size_bytes is not None,
-        )
-        return False
+        return ScanEligibility.NON_REGULAR
     if max_file_size_bytes is not None and file_stat.st_size > max_file_size_bytes:
-        _log_phrase_scan_decision("skipped-oversized", "size-limit", enabled=True)
-        return False
-    return True
+        return ScanEligibility.OVERSIZED
+    return ScanEligibility.ELIGIBLE
 
 
 def select_scannable(
@@ -309,7 +303,7 @@ def select_scannable(
     return tuple(selected)
 
 
-def read_tracked_text(path: pathlib.Path, relative: pathlib.Path) -> str | None:
+def read_tracked_text(path: pathlib.Path, relative: pathlib.Path) -> TrackedTextRead:
     r"""Read tracked UTF-8 text, reporting binary content as absent.
 
     Repositories track images, fonts, archives, and compiled artefacts. Such
@@ -328,9 +322,9 @@ def read_tracked_text(path: pathlib.Path, relative: pathlib.Path) -> str | None:
 
     Returns
     -------
-    str | None
-        Decoded bounded contents, or None when the file is oversized or not
-        UTF-8.
+    TrackedTextRead
+        Decoded bounded contents and a fixed outcome for the orchestration
+        layer to log. The text is absent when the input is oversized or binary.
 
     Raises
     ------
@@ -341,24 +335,21 @@ def read_tracked_text(path: pathlib.Path, relative: pathlib.Path) -> str | None:
     --------
     >>> read_tracked_text(  # doctest: +SKIP
     ...     pathlib.Path("/repo/README.md"), pathlib.Path("README.md")
-    ... )
+    ... ).text
     '# Project\n'
     >>> read_tracked_text(  # doctest: +SKIP
     ...     pathlib.Path("/repo/logo.png"), pathlib.Path("logo.png")
-    ... ) is None
+    ... ).text is None
     True
     """
     try:
         with path.open("rb") as source:
             content = source.read(MAX_FILE_SIZE_BYTES + 1)
         if len(content) > MAX_FILE_SIZE_BYTES:
-            _log_phrase_scan_decision("skipped-oversized", "size-limit")
-            return None
+            return TrackedTextRead(None, ReadOutcome.OVERSIZED)
         with io.TextIOWrapper(io.BytesIO(content), encoding="utf-8") as text_stream:
-            return text_stream.read()
+            return TrackedTextRead(text_stream.read(), ReadOutcome.TEXT)
     except UnicodeDecodeError:
-        _log_phrase_scan_decision("skipped-binary", "not-utf-8")
-        return None
+        return TrackedTextRead(None, ReadOutcome.BINARY)
     except OSError as error:
-        _log_phrase_scan_decision("failed-read", "file-system")
         raise PhraseScanError(relative) from error
