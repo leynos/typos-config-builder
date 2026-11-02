@@ -59,8 +59,23 @@ The CLI exposes three commands over the same pipeline stages:
 `gate` accepts a `--scope` option selecting which tracked files Typos receives:
 `markdown` (the default) restricts Typos to files with the `.md` suffix, and
 `all` passes every tracked file, including hidden ones. The phrase check always
-scans every tracked file regardless of `--scope`, because phrase corrections
-apply to any tracked text.
+checks every tracked file regardless of `--scope` because phrase corrections
+apply to any tracked text. It skips symlinks, non-regular entries such as FIFOs
+and devices, paths outside the worktree, binary content, and regular files
+larger than 1 MiB. A tracked file replaced by a directory raises
+`PhraseScanError` because it indicates worktree drift. The file layer returns
+fixed typed eligibility and read outcomes without logging. Its bounded reader
+opens relative to the repository root without following path-component links on
+POSIX. Windows opens components relative to held directory handles with
+`FILE_OPEN_REPARSE_POINT`, rejects reparse points before traversal, and
+verifies that the final descriptor remains inside the worktree. Native API
+bindings are isolated in `phrase_file_open_windows_native`. This reader is
+scoped to phrase scanning rather than a general-purpose file API. The Windows
+opening decision and rejected alternatives are recorded in
+[ADR 0002](adrs/0002-open-windows-phrase-inputs-with-relative-handles.md).
+`is_scannable` adapts eligibility to a boolean for uncapped Typos selection;
+`phrase_scan` logs the fixed outcomes at the phrase-scan orchestration boundary
+without repeating filesystem checks.
 
 ## 4. Boundaries
 
