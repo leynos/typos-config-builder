@@ -248,22 +248,18 @@ def test_bounded_read_requests_only_one_byte_past_the_limit(
 ) -> None:
     """The read itself stays bounded if a file grows after the size check."""
     monkeypatch.setattr(phrases_files, "MAX_FILE_SIZE_BYTES", 8)
+    (tmp_path / "README.md").write_bytes(b"small")
     requested_sizes: list[int | None] = []
+    reader = io.BytesIO(b"x" * 9)
 
-    class ReadProbe(io.BytesIO):
-        """Record the maximum byte count requested from the reader."""
+    def growing_read(_fd: int, size: int) -> bytes:
+        """Record the bound and simulate growth after metadata inspection."""
+        requested_sizes.append(size)
+        return reader.read(size)
 
-        def read(self, size: int | None = -1) -> bytes:
-            """Capture the bound while returning more data than it permits."""
-            requested_sizes.append(size)
-            return super().read(size)
+    monkeypatch.setattr(os, "read", growing_read)
 
-    reader = ReadProbe(b"x" * 9)
-    monkeypatch.setattr(pathlib.Path, "open", lambda *_args, **_kwargs: reader)
-
-    actual = phrases_files.read_tracked_text(
-        tmp_path / "README.md", pathlib.Path("README.md")
-    )
+    actual = phrases_files.read_tracked_text(tmp_path, pathlib.Path("README.md"))
 
     assert actual.text is None, "the extra byte must make a growing file ineligible"
     assert requested_sizes == [9], "the bounded read must stop one byte past its limit"
@@ -274,16 +270,17 @@ def test_read_failure_is_wrapped_with_the_tracked_path(
 ) -> None:
     """A read error stays fail-closed and identifies the tracked path."""
     path = tmp_path / "README.md"
+    path.write_bytes(b"readable")
     relative = pathlib.Path("README.md")
 
-    def fail_open(*_args: object, **_kwargs: object) -> typ.Never:
-        """Simulate a worktree entry that cannot be opened."""
+    def fail_read(*_args: object, **_kwargs: object) -> typ.Never:
+        """Simulate a worktree entry that cannot be read."""
         raise PermissionError
 
-    monkeypatch.setattr(pathlib.Path, "open", fail_open)
+    monkeypatch.setattr(os, "read", fail_read)
 
     with pytest.raises(phrases_files.PhraseScanError) as error:
-        phrases_files.read_tracked_text(path, relative)
+        phrases_files.read_tracked_text(tmp_path, relative)
 
     assert error.value.path == relative, "retain the tracked path"
     assert isinstance(error.value.__cause__, PermissionError), "retain the cause"

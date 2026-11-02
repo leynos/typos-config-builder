@@ -13,7 +13,7 @@ from conftest import build_repository, cache_text
 from hypothesis import example, given
 from hypothesis import strategies as st
 
-from typos_config_builder import phrases, phrases_files
+from typos_config_builder import phrase_scan, phrases, phrases_files
 
 
 def _phrase_scan_records(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
@@ -51,6 +51,7 @@ def test_file_layer_decisions_are_silent(
     directory.mkdir()
     oversized = root / "large.md"
     oversized.write_bytes(b"x" * 9)
+    (root / "README.md").write_bytes(b"small")
     monkeypatch.setattr(phrases_files, "MAX_FILE_SIZE_BYTES", 8)
 
     with caplog.at_level(logging.DEBUG, logger="typos_config_builder"):
@@ -78,31 +79,25 @@ def test_file_layer_decisions_are_silent(
             == "skipped-oversized"
         ), "classify oversized files"
 
-        monkeypatch.setattr(
-            pathlib.Path,
-            "open",
-            lambda *_args, **_kwargs: io.BytesIO(b"x" * 9),
-        )
-        too_large = phrases_files.read_tracked_text(link, pathlib.Path("device.md"))
+        reader = io.BytesIO(b"x" * 9)
+        monkeypatch.setattr(os, "read", lambda _fd, size: reader.read(size))
+        too_large = phrases_files.read_tracked_text(root, pathlib.Path("README.md"))
         assert too_large.text is None, "discard over-limit bytes"
         assert too_large.outcome.decision == "skipped-oversized", "record size skip"
 
-        monkeypatch.setattr(
-            pathlib.Path,
-            "open",
-            lambda *_args, **_kwargs: io.BytesIO(b"\xff"),
-        )
-        binary = phrases_files.read_tracked_text(link, pathlib.Path("device.md"))
+        reader = io.BytesIO(b"\xff")
+        monkeypatch.setattr(os, "read", lambda _fd, size: reader.read(size))
+        binary = phrases_files.read_tracked_text(root, pathlib.Path("README.md"))
         assert binary.text is None, "discard binary content"
         assert binary.outcome.decision == "skipped-binary", "record binary skip"
 
-        def fail_open(*_args: object, **_kwargs: object) -> typ.Never:
-            """Simulate a tracked input that cannot be opened."""
+        def fail_read(*_args: object, **_kwargs: object) -> typ.Never:
+            """Simulate a tracked input that cannot be read."""
             raise PermissionError
 
-        monkeypatch.setattr(pathlib.Path, "open", fail_open)
+        monkeypatch.setattr(os, "read", fail_read)
         with pytest.raises(phrases_files.PhraseScanError):
-            phrases_files.read_tracked_text(link, pathlib.Path("device.md"))
+            phrases_files.read_tracked_text(root, pathlib.Path("README.md"))
 
     assert not caplog.records, "file-layer helpers must not emit diagnostics"
 
@@ -188,6 +183,51 @@ def test_directory_replacement_logs_without_path_or_content(
     _assert_path_free(record)
 
 
+@pytest.mark.skipif(
+    os.open not in os.supports_dir_fd or not hasattr(os, "O_NOFOLLOW"),
+    reason="requires no-follow directory-relative opening",
+)
+def test_parent_symlink_swap_cannot_redirect_the_read(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A parent replaced after eligibility cannot redirect the open outside."""
+    repository = tmp_path / "repository"
+    nested = repository / "nested"
+    nested.mkdir(parents=True)
+    candidate = nested / "README.md"
+    candidate.write_text("Safe tracked text.\n", encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "README.md").write_text("External text.\n", encoding="utf-8")
+    root = repository.resolve()
+    relative = pathlib.Path("nested/README.md")
+    original_open = phrases_files.open_tracked_file
+    original_read = os.read
+    read_calls: list[int] = []
+
+    def swap_parent_then_open(
+        worktree: pathlib.Path, tracked_path: pathlib.Path
+    ) -> int | None:
+        """Replace the parent only after the path passed its eligibility check."""
+        nested.rename(tmp_path / "original-nested")
+        nested.symlink_to(outside, target_is_directory=True)
+        return original_open(worktree, tracked_path)
+
+    def observe_read(file_descriptor: int, size: int) -> bytes:
+        """Record any content read after the unsafe path replacement."""
+        read_calls.append(size)
+        return original_read(file_descriptor, size)
+
+    monkeypatch.setattr(phrases_files, "open_tracked_file", swap_parent_then_open)
+    monkeypatch.setattr(os, "read", observe_read)
+
+    with pytest.raises(phrases.PhraseScanError):
+        phrase_scan.read_scannable_text(root / relative, relative, root)
+
+    assert not read_calls, "reject the swapped parent before reading file content"
+
+
 def test_read_error_logs_without_path_or_content(
     tmp_path: pathlib.Path,
     caplog: pytest.LogCaptureFixture,
@@ -199,12 +239,25 @@ def test_read_error_logs_without_path_or_content(
         {".typos-oxendict-base.toml": cache_text(), "README.md": "Readable once.\n"},
     )
     policy = phrases.load_policy(repository)
+    tracked_file_descriptors: set[int] = set()
+    original_open = phrases_files.open_tracked_file
+    original_read = os.read
 
-    def fail_open(*_args: object, **_kwargs: object) -> typ.Never:
-        """Simulate a tracked file that cannot be opened."""
-        raise PermissionError
+    def record_open_file(worktree: pathlib.Path, relative: pathlib.Path) -> int | None:
+        """Remember descriptors so subprocess pipes keep their real reader."""
+        file_descriptor = original_open(worktree, relative)
+        if file_descriptor is not None:
+            tracked_file_descriptors.add(file_descriptor)
+        return file_descriptor
 
-    monkeypatch.setattr(pathlib.Path, "open", fail_open)
+    def fail_read(file_descriptor: int, size: int) -> bytes:
+        """Simulate a tracked file that cannot be read."""
+        if file_descriptor in tracked_file_descriptors:
+            raise PermissionError
+        return original_read(file_descriptor, size)
+
+    monkeypatch.setattr(phrases_files, "open_tracked_file", record_open_file)
+    monkeypatch.setattr(os, "read", fail_read)
     with (
         caplog.at_level(logging.DEBUG, logger="typos_config_builder"),
         pytest.raises(phrases.PhraseScanError),
@@ -233,16 +286,26 @@ def test_read_side_oversize_logs_without_path_or_content(
     )
     policy = phrases.load_policy(repository)
     monkeypatch.setattr(phrases_files, "MAX_FILE_SIZE_BYTES", 8)
-    source_path = repository / "README.md"
-    original_open = pathlib.Path.open
+    tracked_file_descriptors: set[int] = set()
+    original_open = phrases_files.open_tracked_file
+    original_read = os.read
+    reader = io.BytesIO(b"x" * 9)
 
-    def growing_open(path: pathlib.Path, _mode: str) -> typ.BinaryIO:
+    def record_open_file(worktree: pathlib.Path, relative: pathlib.Path) -> int | None:
+        """Remember the input descriptor without changing subprocess reads."""
+        file_descriptor = original_open(worktree, relative)
+        if file_descriptor is not None:
+            tracked_file_descriptors.add(file_descriptor)
+        return file_descriptor
+
+    def growing_read(file_descriptor: int, size: int) -> bytes:
         """Present an over-limit stream after metadata was accepted."""
-        if path == source_path:
-            return io.BytesIO(b"x" * 9)
-        return original_open(path, "rb")
+        if file_descriptor in tracked_file_descriptors:
+            return reader.read(size)
+        return original_read(file_descriptor, size)
 
-    monkeypatch.setattr(pathlib.Path, "open", growing_open)
+    monkeypatch.setattr(phrases_files, "open_tracked_file", record_open_file)
+    monkeypatch.setattr(os, "read", growing_read)
     with caplog.at_level(logging.DEBUG, logger="typos_config_builder"):
         findings = phrases.find_phrases(repository, policy)
 
@@ -267,34 +330,37 @@ def test_read_side_oversize_logs_without_path_or_content(
 @example(limit=8, payload_size=8)
 @example(limit=8, payload_size=9)
 def test_bounded_read_obeys_nonnegative_limits(
+    tmp_path_factory: pytest.TempPathFactory,
     limit: int,
     payload_size: int,
 ) -> None:
-    """A bounded read requests limit plus one and accepts only in-bound text."""
-    requested_sizes: list[int | None] = []
+    """A bounded read consumes at most one byte beyond the configured limit."""
+    requested_sizes: list[int] = []
+    returned_sizes: list[int] = []
+    repository = tmp_path_factory.mktemp("bounded-read")
 
-    class ReadProbe(io.BytesIO):
-        """Record the byte bound requested from the reader."""
+    (repository / "README.md").write_bytes(b"")
+    reader = io.BytesIO(b"x" * payload_size)
 
-        def read(self, size: int | None = -1) -> bytes:
-            """Capture the bound while returning the generated payload."""
-            requested_sizes.append(size)
-            return super().read(size)
-
-    def open_probe(_path: pathlib.Path, _mode: str) -> typ.BinaryIO:
-        """Supply a probe stream to record the bounded read request."""
-        return ReadProbe(b"x" * payload_size)
+    def read_probe(_fd: int, size: int) -> bytes:
+        """Supply generated bytes and record each bounded read request."""
+        requested_sizes.append(size)
+        chunk = reader.read(size)
+        returned_sizes.append(len(chunk))
+        return chunk
 
     with (
         mock.patch.object(phrases_files, "MAX_FILE_SIZE_BYTES", limit),
-        mock.patch.object(pathlib.Path, "open", open_probe),
+        mock.patch.object(os, "read", read_probe),
     ):
-        result = phrases_files.read_tracked_text(
-            pathlib.Path("README.md"), pathlib.Path("README.md")
-        )
+        result = phrases_files.read_tracked_text(repository, pathlib.Path("README.md"))
 
     is_oversized = payload_size > limit
-    assert requested_sizes == [limit + 1], "read only one byte past the limit"
+    assert requested_sizes[0] == limit + 1, "start with the permitted read size"
+    assert all(size <= limit + 1 for size in requested_sizes), "cap each read request"
+    assert sum(returned_sizes) == min(payload_size, limit + 1), (
+        "consume no more than one byte past the limit"
+    )
     assert (result.text is None) is is_oversized, "accept only in-bound payloads"
     assert result.outcome.decision == (
         "skipped-oversized" if is_oversized else "scanned-text"

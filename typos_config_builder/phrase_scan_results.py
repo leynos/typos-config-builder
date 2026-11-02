@@ -75,6 +75,8 @@ class ReadOutcome(enum.Enum):
         The bounded read found at least one byte beyond the size limit.
     BINARY
         The bounded contents could not be decoded as UTF-8.
+    NON_REGULAR
+        The opened descriptor no longer names a regular file.
 
     Attributes
     ----------
@@ -87,6 +89,7 @@ class ReadOutcome(enum.Enum):
     TEXT = ("scanned-text", "utf-8")
     OVERSIZED = ("skipped-oversized", "size-limit")
     BINARY = ("skipped-binary", "not-utf-8")
+    NON_REGULAR = ("skipped-non-regular", "non-regular")
 
     @property
     def decision(self) -> str:
@@ -108,8 +111,8 @@ class TrackedTextRead:
     text
         Decoded text when the read outcome is ``TEXT``; otherwise ``None``.
     outcome
-        ``TEXT`` when ``text`` is present, ``OVERSIZED`` or ``BINARY`` when
-        ``text`` is absent.
+        ``TEXT`` when ``text`` is present; otherwise an oversized, binary, or
+        non-regular read outcome.
 
     Examples
     --------

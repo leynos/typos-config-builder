@@ -82,7 +82,7 @@ def read_scannable_text(
         >>> with tempfile.TemporaryDirectory() as directory:
         ...     root = Path(directory).resolve()
         ...     candidate = root / "README.md"
-        ...     candidate.write_text("Hello", encoding="utf-8")
+        ...     _ = candidate.write_text("Hello", encoding="utf-8")
         ...     read_scannable_text(candidate, Path("README.md"), root)
         'Hello'
     """
@@ -93,7 +93,7 @@ def read_scannable_text(
             raise PhraseScanError(relative) from IsADirectoryError(candidate)
         return None
     try:
-        tracked_text = read_tracked_text(candidate, relative)
+        tracked_text = read_tracked_text(root, relative)
     except PhraseScanError:
         _log_phrase_scan_decision("failed-read", "file-system")
         raise

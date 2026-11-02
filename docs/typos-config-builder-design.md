@@ -62,12 +62,15 @@ The CLI exposes three commands over the same pipeline stages:
 checks every tracked file regardless of `--scope` because phrase corrections
 apply to any tracked text. It skips symlinks, non-regular entries such as FIFOs
 and devices, paths outside the worktree, binary content, and regular files
-larger than 1 MiB. A tracked file replaced by a directory fails the scan closed
-because it indicates worktree drift. The file layer returns fixed typed
-eligibility and read outcomes without logging. `is_scannable` adapts
-eligibility to a boolean for uncapped Typos selection; `phrase_scan` logs the
-fixed outcomes at the phrase-scan orchestration boundary without repeating
-filesystem checks.
+larger than 1 MiB. A tracked file replaced by a directory raises
+`PhraseScanError` because it indicates worktree drift. The file layer returns
+fixed typed eligibility and read outcomes without logging. Its bounded reader
+opens relative to the repository root without following path-component links on
+POSIX and verifies the final handle remains inside the worktree on Windows; it
+is scoped to phrase scanning rather than a general-purpose file API.
+`is_scannable` adapts eligibility to a boolean for uncapped Typos selection;
+`phrase_scan` logs the fixed outcomes at the phrase-scan orchestration boundary
+without repeating filesystem checks.
 
 ## 4. Boundaries
 

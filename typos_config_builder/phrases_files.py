@@ -27,6 +27,7 @@ import subprocess  # ruff: ignore[suspicious-subprocess-import]
 import typing as typ
 
 from typos_config_builder import builder
+from typos_config_builder.phrase_file_open import open_tracked_file
 from typos_config_builder.phrase_scan_results import (
     ReadOutcome,
     ScanEligibility,
@@ -226,7 +227,8 @@ def scan_eligibility(
     """Classify one tracked path without logging or opening its contents.
 
     :func:`is_scannable` adapts this result for Typos selection, which remains
-    uncapped. :func:`phrases.find_phrases` consumes it for path-free logging.
+    uncapped. :func:`phrase_scan._scan_eligibility_for_path` consumes it for
+    path-free logging.
 
     Parameters
     ----------
@@ -293,7 +295,7 @@ def select_scannable(
     ()
     """
     root = repository.resolve()
-    selected = []
+    selected: list[pathlib.Path] = []
     for relative in relatives:
         try:
             if is_scannable(repository / relative, root):
@@ -303,20 +305,55 @@ def select_scannable(
     return tuple(selected)
 
 
-def read_tracked_text(path: pathlib.Path, relative: pathlib.Path) -> TrackedTextRead:
+def _read_bounded_bytes(file_descriptor: int) -> bytes | None:
+    """Read at most one byte beyond the input limit to detect growth."""
+    content = bytearray()
+    read_limit = MAX_FILE_SIZE_BYTES + 1
+    while len(content) < read_limit:
+        chunk = os.read(file_descriptor, read_limit - len(content))
+        if not chunk:
+            break
+        content.extend(chunk)
+    if len(content) > MAX_FILE_SIZE_BYTES:
+        return None
+    return bytes(content)
+
+
+def _read_open_file(file_descriptor: int, path: pathlib.Path) -> TrackedTextRead:
+    """Validate and decode bytes from an already secured descriptor."""
+    file_stat = os.fstat(file_descriptor)
+    if stat.S_ISDIR(file_stat.st_mode):
+        raise IsADirectoryError(path)
+    if not stat.S_ISREG(file_stat.st_mode):
+        return TrackedTextRead(None, ReadOutcome.NON_REGULAR)
+    if file_stat.st_size > MAX_FILE_SIZE_BYTES:
+        return TrackedTextRead(None, ReadOutcome.OVERSIZED)
+
+    content = _read_bounded_bytes(file_descriptor)
+    if content is None:
+        return TrackedTextRead(None, ReadOutcome.OVERSIZED)
+    try:
+        with io.TextIOWrapper(io.BytesIO(content), encoding="utf-8") as reader:
+            text = reader.read()
+    except UnicodeDecodeError:
+        return TrackedTextRead(None, ReadOutcome.BINARY)
+    return TrackedTextRead(text, ReadOutcome.TEXT)
+
+
+def read_tracked_text(root: pathlib.Path, relative: pathlib.Path) -> TrackedTextRead:
     r"""Read tracked UTF-8 text, reporting binary content as absent.
 
     Repositories track images, fonts, archives, and compiled artefacts. Such
     content carries no prose for a phrase check to examine, so it is skipped
     rather than failing the scan. Oversized files are also skipped, and the
-    read is capped at one byte beyond the limit in case a file grows after its
-    metadata was checked. A read error is a different matter: the worktree has
-    changed under the scan, which must fail closed.
+    opened descriptor is validated before a read capped at one byte beyond the
+    limit. A read error is a different matter: the worktree has changed under
+    the scan, which must fail closed.
 
     Parameters
     ----------
-    path
-        Absolute path to read.
+    root
+        Resolved worktree that anchors the descriptor-relative open.
     relative
         Repository-relative path reported by a failure.
 
@@ -324,7 +361,8 @@ def read_tracked_text(path: pathlib.Path, relative: pathlib.Path) -> TrackedText
     -------
     TrackedTextRead
         Decoded bounded contents and a fixed outcome for the orchestration
-        layer to log. The text is absent when the input is oversized or binary.
+        layer to log. The text is absent for oversized, binary, or non-regular
+        inputs.
 
     Raises
     ------
@@ -334,22 +372,22 @@ def read_tracked_text(path: pathlib.Path, relative: pathlib.Path) -> TrackedText
     Examples
     --------
     >>> read_tracked_text(  # doctest: +SKIP
-    ...     pathlib.Path("/repo/README.md"), pathlib.Path("README.md")
+    ...     pathlib.Path("/repo"), pathlib.Path("README.md")
     ... ).text
     '# Project\n'
     >>> read_tracked_text(  # doctest: +SKIP
-    ...     pathlib.Path("/repo/logo.png"), pathlib.Path("logo.png")
+    ...     pathlib.Path("/repo"), pathlib.Path("logo.png")
     ... ).text is None
     True
     """
     try:
-        with path.open("rb") as source:
-            content = source.read(MAX_FILE_SIZE_BYTES + 1)
-        if len(content) > MAX_FILE_SIZE_BYTES:
-            return TrackedTextRead(None, ReadOutcome.OVERSIZED)
-        with io.TextIOWrapper(io.BytesIO(content), encoding="utf-8") as text_stream:
-            return TrackedTextRead(text_stream.read(), ReadOutcome.TEXT)
-    except UnicodeDecodeError:
-        return TrackedTextRead(None, ReadOutcome.BINARY)
+        root = root.resolve()
+        file_descriptor = open_tracked_file(root, relative)
+        if file_descriptor is None:
+            return TrackedTextRead(None, ReadOutcome.NON_REGULAR)
+        try:
+            return _read_open_file(file_descriptor, root / relative)
+        finally:
+            os.close(file_descriptor)
     except OSError as error:
         raise PhraseScanError(relative) from error
