@@ -45,12 +45,47 @@ def _scan_eligibility_for_path(
         raise PhraseScanError(relative) from error
 
 
-def _read_scannable_text(
+def read_scannable_text(
     candidate: pathlib.Path,
     relative: pathlib.Path,
     root: pathlib.Path,
 ) -> str | None:
-    """Return tracked UTF-8 text, such as the prose stored in ``README.md``."""
+    """Read tracked UTF-8 text when a path is safe for phrase scanning.
+
+    Parameters
+    ----------
+    candidate : pathlib.Path
+        Path to the tracked entry on disk.
+    relative : pathlib.Path
+        Repository-relative path used in any raised scan error.
+    root : pathlib.Path
+        Resolved repository root used to check path containment.
+
+    Returns
+    -------
+    str | None
+        Decoded text for an eligible regular file, or ``None`` when the entry
+        is ineligible, oversized, or not valid UTF-8.
+
+    Raises
+    ------
+    PhraseScanError
+        If metadata or content cannot be read, or a tracked entry has been
+        replaced by a directory.
+
+    Examples
+    --------
+    Read a small tracked Markdown file before scanning its text::
+
+        >>> import tempfile
+        >>> from pathlib import Path
+        >>> with tempfile.TemporaryDirectory() as directory:
+        ...     root = Path(directory).resolve()
+        ...     candidate = root / "README.md"
+        ...     candidate.write_text("Hello", encoding="utf-8")
+        ...     read_scannable_text(candidate, Path("README.md"), root)
+        'Hello'
+    """
     eligibility = _scan_eligibility_for_path(candidate, relative, root)
     if not eligibility.is_eligible:
         _log_phrase_scan_decision(eligibility.decision, eligibility.error_class)

@@ -336,7 +336,7 @@ def find_phrases(
         if relative in POLICY_PATHS or exclusions.match_file(relative.as_posix()):
             continue
         candidate = repository / relative
-        tracked_text = phrase_scan._read_scannable_text(candidate, relative, root)
+        tracked_text = phrase_scan.read_scannable_text(candidate, relative, root)
         if tracked_text is not None:
             findings.extend(scanner.scan(relative, tracked_text))
     return tuple(findings)
