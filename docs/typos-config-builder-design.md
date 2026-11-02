@@ -65,8 +65,8 @@ and devices, paths outside the worktree, binary content, and regular files
 larger than 1 MiB. A tracked file replaced by a directory fails the scan closed
 because it indicates worktree drift. The file layer returns fixed typed
 eligibility and read outcomes without logging. `is_scannable` adapts
-eligibility to a boolean for uncapped Typos selection; `phrases.find_phrases`
-consumes the outcomes and emits path-free diagnostics without repeating
+eligibility to a boolean for uncapped Typos selection; `phrase_scan` logs the
+fixed outcomes at the phrase-scan orchestration boundary without repeating
 filesystem checks.
 
 ## 4. Boundaries

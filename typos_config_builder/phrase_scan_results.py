@@ -7,10 +7,33 @@ import enum
 
 
 class ScanEligibility(enum.Enum):
-    """Describe a tracked path's eligibility without producing diagnostics.
+    """Describe whether a tracked path may be read by the phrase scan.
 
-    Each rejected result carries a fixed decision and reason for the phrase
-    scan's orchestration layer to log without repeating filesystem checks.
+    Members
+    -------
+    ELIGIBLE
+        A regular file within the worktree and the optional size limit.
+    SYMLINK
+        A symbolic link that must not be followed.
+    OUTSIDE_WORKTREE
+        A path whose resolved target escapes the repository.
+    NON_REGULAR
+        A FIFO, device, socket, or other non-regular filesystem entry.
+    OVERSIZED
+        A regular file that exceeds the configured phrase-scan limit.
+    DIRECTORY_REPLACEMENT
+        A directory at a path that Git enumerated as a file.
+
+    Attributes
+    ----------
+    decision
+        Fixed phrase-scan log category for this result.
+    error_class
+        Fixed reason label paired with the category.
+    is_eligible
+        Whether the phrase scan may read this path.
+    fails_scan
+        Whether this result must abort the phrase scan.
     """
 
     ELIGIBLE = ("eligible", "")
@@ -35,9 +58,31 @@ class ScanEligibility(enum.Enum):
         """Report whether a phrase scan may read the tracked path."""
         return self is ScanEligibility.ELIGIBLE
 
+    @property
+    def fails_scan(self) -> bool:
+        """Report whether this result must abort the phrase scan."""
+        return self is ScanEligibility.DIRECTORY_REPLACEMENT
+
 
 class ReadOutcome(enum.Enum):
-    """Describe whether a bounded tracked-file read produced UTF-8 text."""
+    """Describe the result of a bounded tracked-file read.
+
+    Members
+    -------
+    TEXT
+        The file was within the size limit and decoded as UTF-8.
+    OVERSIZED
+        The bounded read found at least one byte beyond the size limit.
+    BINARY
+        The bounded contents could not be decoded as UTF-8.
+
+    Attributes
+    ----------
+    decision
+        Fixed phrase-scan log category for this result.
+    error_class
+        Fixed reason label paired with the category.
+    """
 
     TEXT = ("scanned-text", "utf-8")
     OVERSIZED = ("skipped-oversized", "size-limit")
@@ -56,7 +101,21 @@ class ReadOutcome(enum.Enum):
 
 @dc.dataclass(frozen=True, slots=True)
 class TrackedTextRead:
-    """Carry read text and its fixed outcome to the phrase-scan boundary."""
+    """Carry decoded text and its fixed outcome to phrase-scan orchestration.
+
+    Attributes
+    ----------
+    text
+        Decoded text when the read outcome is ``TEXT``; otherwise ``None``.
+    outcome
+        ``TEXT`` when ``text`` is present, ``OVERSIZED`` or ``BINARY`` when
+        ``text`` is absent.
+
+    Examples
+    --------
+    >>> TrackedTextRead(None, ReadOutcome.BINARY).outcome.decision
+    'skipped-binary'
+    """
 
     text: str | None
     outcome: ReadOutcome

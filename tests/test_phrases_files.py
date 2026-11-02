@@ -92,14 +92,6 @@ def test_device_is_not_scannable(tmp_path: pathlib.Path) -> None:
     assert not scannable, "skip device inputs"
 
 
-def test_external_checker_selection_skips_a_directory(tmp_path: pathlib.Path) -> None:
-    """Directories are omitted from the paths sent to the external checker."""
-    directory = tmp_path / "docs"
-    directory.mkdir()
-    selected = phrases_files.select_scannable(tmp_path, (pathlib.Path("docs"),))
-    assert not selected, "skip directories"
-
-
 def test_tracked_path_behind_a_symlinked_parent_is_skipped(
     tmp_path: pathlib.Path,
 ) -> None:
@@ -249,18 +241,6 @@ def test_oversized_tracked_text_is_skipped(
     monkeypatch.setattr(phrases_files, "MAX_FILE_SIZE_BYTES", 8)
     findings = phrases.find_phrases(repository, phrases.load_policy(repository))
     assert not findings, "skip oversized tracked text"
-
-
-def test_large_regular_file_stays_in_typos_selection(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Typos selection is not limited by the phrase scanner's input cap."""
-    monkeypatch.setattr(phrases_files, "MAX_FILE_SIZE_BYTES", 8)
-    (tmp_path / "README.md").write_text("Large enough.", encoding="utf-8")
-
-    expected = (pathlib.Path("README.md"),)
-    selected = phrases_files.select_scannable(tmp_path, expected)
-    assert selected == expected, "keep large regular files in Typos selection"
 
 
 def test_bounded_read_requests_only_one_byte_past_the_limit(

@@ -298,7 +298,7 @@ def select_scannable(
         try:
             if is_scannable(repository / relative, root):
                 selected.append(relative)
-        except IsADirectoryError:
+        except FileNotFoundError, IsADirectoryError:
             continue
     return tuple(selected)
 
