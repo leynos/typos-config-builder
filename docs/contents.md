@@ -30,6 +30,8 @@ documentation set.
   deterministic generation pipeline and its deliberate boundaries.
 - [ADR 0001: Keep the builder focused](adrs/0001-keep-the-builder-focused.md)
   records why rollout, harvesting, and tool orchestration remain out of scope.
+- [ADR 0002: Windows phrase-file handles](adrs/0002-open-windows-phrase-inputs-with-relative-handles.md)
+  records the relative-handle opening boundary for Windows phrase inputs.
 
 ## Engineering practice
 

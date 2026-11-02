@@ -46,8 +46,8 @@ def open_tracked_file(root: pathlib.Path, relative: pathlib.Path) -> int | None:
     """Open a tracked file while keeping its eventual read inside ``root``.
 
     POSIX walks every component from the worktree descriptor and rejects
-    symbolic links. Windows validates the final opened handle before returning
-    it, since Python does not expose directory-relative opens there.
+    symbolic links. Windows opens each component relative to a held directory
+    handle with reparse processing disabled, then validates the final handle.
 
     Parameters
     ----------

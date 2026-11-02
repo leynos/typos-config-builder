@@ -28,6 +28,18 @@ def test_external_checker_selection_skips_a_vanished_path(
     assert not selected, "skip paths that vanished after Git enumeration"
 
 
+def test_external_checker_selection_skips_a_regular_file_parent(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A replaced parent cannot leave a stale tracked path for Typos."""
+    (tmp_path / "docs").write_text("replaced directory", encoding="utf-8")
+    tracked_path = pathlib.Path("docs/README.md")
+
+    selected = phrases_files.select_scannable(tmp_path, (tracked_path,))
+
+    assert not selected, "skip tracked paths beneath a regular-file parent"
+
+
 def test_large_regular_file_stays_in_typos_selection(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

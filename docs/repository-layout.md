@@ -11,10 +11,15 @@ This reference identifies the small set of paths that define the builder.
 - `typos_config_builder/phrases.py` enforces the shared phrase corrections
   that Typos cannot express. `typos_config_builder/phrase_scan.py` logs the
   fixed, path-free scan outcomes. `typos_config_builder/phrases_files.py` owns
-  tracked-file selection (the Git listing, policy-file and escape checks, and
-  fail-closed reading) and is the only module that shells out to Git.
-  `typos_config_builder/phrase_scan_results.py` defines the fixed eligibility
-  and read outcomes passed from file selection to phrase scanning.
+  tracked-file selection (the Git listing, policy-file and escape checks) and
+  bounded phrase reads; it is the only module that shells out to Git.
+  `phrases_files.read_tracked_text` is the sole production caller of the
+  `phrase_file_open.py` dispatcher. The dispatcher loads
+  `phrase_file_open_windows.py` on Windows, and that adapter uses
+  `phrase_file_open_windows_native.py` for native bindings and handle-relative
+  no-reparse traversal. `typos_config_builder/phrase_scan_results.py` defines
+  the fixed eligibility and read outcomes passed from file selection to phrase
+  scanning.
 - `typos_config_builder/gate.py` runs the whole gate: generation, the pinned
   Typos binary, and the phrase check. It is the package's only other module
   that starts a subprocess, and the process it starts is Typos.
@@ -23,8 +28,11 @@ This reference identifies the small set of paths that define the builder.
   `test_policy.py`, `test_patterns.py`, `test_phrases.py`,
   `test_phrases_files.py` and `test_phrases_file_selection.py` for tracked-file
   selection, `test_phrase_scan_diagnostics.py` for path-free diagnostics,
-  `test_gate.py`, `test_gate_typos.py` for the Typos invocation contracts,
-  `test_cli.py`), plus shared fixtures in `conftest.py`.
+  `test_phrase_file_open_windows.py` and
+  `test_phrase_file_open_windows_native.py` for portable handle and API tests,
+  and `test_phrase_file_open_windows_integration.py` for native Windows opens
+  run in Windows CI; `test_gate.py`, `test_gate_typos.py` for the Typos
+  invocation contracts, `test_cli.py`), plus shared fixtures in `conftest.py`.
 - Maintainer guidance, the user contract, design, and decision record belong in
   `docs/`.
 - `pyproject.toml` declares the package, Python requirement, dependencies, and
