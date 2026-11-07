@@ -50,7 +50,7 @@ PYTHON_TARGETS ?= typos_config_builder tests
 # is not edited here; it ships with complete docstrings, so the gate covers it.
 INTERROGATE_TARGETS ?= $(PYTHON_TARGETS) scripts
 # Level 2 prints a MISSED row per undocumented definition, which the
-# `interrogate` target fails on: the rounded percentage alone passes a lone gap.
+# `interrogate` target fails on: the rounded percentage alone can pass a lone gap.
 INTERROGATE_FLAGS ?= -vv --fail-under 100
 INTERROGATE ?= $(UV_GATE) run -- interrogate
 # Pylint runs on CPython at the project's 3.14 baseline: the source uses 3.14
@@ -135,7 +135,7 @@ check-fmt: build ## Verify formatting
 lint: lint-python ## Run linters
 
 # Interrogate rounds its percentage to one decimal, so `--fail-under 100` alone
-# passes a lone gap in a large repository; fail on any MISSED row as well.
+# can pass a lone gap in a large repository; fail on any MISSED row as well.
 interrogate: build ## Enforce complete Python docstring coverage
 	@report="$$($(INTERROGATE) $(INTERROGATE_FLAGS) $(INTERROGATE_TARGETS))"; \
 	  status=$$?; \

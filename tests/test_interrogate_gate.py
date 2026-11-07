@@ -136,6 +136,9 @@ _MAKE_STATE = frozenset({
     "MAKELEVEL",
     "MAKEOVERRIDES",
     "UV",
+    "UV_GATE",
+    "PYTHON_TARGETS",
+    "PYTHON_TESTS",
 })
 # Interrogate 1.7.0 skips a path whose first component below a target begins with
 # one of these (virtual environments and version-control directories).
@@ -156,13 +159,26 @@ def test_no_tracked_file_hides_behind_a_default_exclusion() -> None:
     assert not hidden, f"interrogate skips these by default: {hidden}"
 
 
+def _make_value(path: Path) -> str:
+    """Quote a path for the shell and escape its dollar signs for Make.
+
+    Returns
+    -------
+    str
+        The path as a command-line variable value Make passes through intact.
+    """
+    return shlex.quote(str(path).replace("$", "$$"))
+
+
 def _make_interrogate(*assignments: str) -> subprocess.CompletedProcess[str]:
     """Run `make interrogate` with the given variable assignments.
 
-    A parent Make's flags, a caller's UV or INTERROGATE_* overrides would change
-    what the target runs, so the run starts from a clean environment. The
-    target's own prerequisites (the environment build) are treated as up to
-    date: the tests drive the recipe, not the build.
+    A parent Make's flags and a caller's `UV`, `UV_GATE`, `PYTHON_TARGETS`,
+    `PYTHON_TESTS` or `INTERROGATE*` overrides would change what the target
+    runs, so those variables are removed from the child environment (other
+    variables, such as `UV_GATE_ALLOW_ONLINE`, are kept). The target's own
+    prerequisites (the environment build) are treated as up to date: the tests
+    drive the recipe, not the build.
 
     Returns
     -------
@@ -205,7 +221,7 @@ def _run_target(tmp_path: Path, script: str) -> subprocess.CompletedProcess[str]
         encoding="utf-8",
     )
     stub.chmod(0o755)
-    return _make_interrogate(f"INTERROGATE={shlex.quote(str(stub))}")
+    return _make_interrogate(f"INTERROGATE={_make_value(stub)}")
 
 
 def _run_real_tool(
@@ -233,7 +249,7 @@ def _run_real_tool(
     (package / "mod.py").write_text(
         '"""Generated module."""\n\n\n' + documented + bare, encoding="utf-8"
     )
-    return _make_interrogate(f"INTERROGATE_TARGETS={shlex.quote(str(package))}")
+    return _make_interrogate(f"INTERROGATE_TARGETS={_make_value(package)}")
 
 
 def test_a_documented_package_passes_the_real_gate(tmp_path: Path) -> None:
@@ -250,7 +266,7 @@ def test_an_undocumented_function_fails_the_real_gate(tmp_path: Path) -> None:
 
 
 def test_a_gap_hidden_by_rounding_still_fails_the_target(tmp_path: Path) -> None:
-    """One missing docstring among 4,000 rounds to 100% yet fails the target.
+    """One undocumented function beside 4,000 documented ones still fails.
 
     The tool alone accepts the report (its percentage rounds to 100.0), so this
     proves the MISSED-row guard is what rejects the lone gap.

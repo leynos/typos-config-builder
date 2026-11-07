@@ -287,7 +287,8 @@ percentage to one decimal and so can pass a lone gap in a sufficiently large
 codebase. Interrogate 1.7.0 skips a path whose first component below a target
 begins with `.tox`, `.venv`, `venv`, `.git` or `.hg`;
 `tests/test_interrogate_gate.py` fails if a tracked Python file sits at such a
-name directly under a target, and asserts the rest of the wiring.
+name, or in a directory of that name, directly under a target, and asserts the
+rest of the wiring.
 
 ### Pylint tier
 
