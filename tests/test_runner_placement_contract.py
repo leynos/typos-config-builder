@@ -39,6 +39,12 @@ HOSTED_CONDITION: typ.Final = f"({FORK_CONDITION} || {DEPENDABOT_CONDITION})"
 #: or a class or ceiling changed, fails until reviewed.
 PLACEMENTS: typ.Final = (
     (".github/workflows/ci.yml", "lint-test", "ubicloud-standard-2", "15"),
+    (
+        ".github/workflows/coverage-main.yml",
+        "coverage-baseline",
+        "ubicloud-standard-2",
+        "15",
+    ),
 )
 
 #: The runner-selection shape: a parenthesized condition, a quoted hosted arm

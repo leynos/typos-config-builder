@@ -103,7 +103,7 @@ jobs:
       # publishes the report.
       - name: Test and Measure Coverage
         if: ${{ github.event_name == 'pull_request' }}
-        uses: leynos/shared-actions/.github/actions/generate-coverage@4d876cadbba3618630f67b2fd0405f52bc7661e4
+        uses: leynos/shared-actions/.github/actions/generate-coverage@f84a7def5646a6fc7ba77c1f486906f66a0fed96
         with:
           output-path: coverage.xml
           format: cobertura
