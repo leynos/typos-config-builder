@@ -173,10 +173,10 @@ def _make_value(path: Path) -> str:
 def _make_interrogate(*assignments: str) -> subprocess.CompletedProcess[str]:
     """Run `make interrogate` with the given variable assignments.
 
-    A parent Make's flags and a caller's `UV`, `UV_GATE`, `PYTHON_TARGETS`,
-    `PYTHON_TESTS` or `INTERROGATE*` overrides would change what the target
-    runs, so those variables are removed from the child environment (other
-    variables, such as `UV_GATE_ALLOW_ONLINE`, are kept). The target's own
+    A parent Make's flags and a caller's `UV`, `UV_GATE` or `INTERROGATE*`
+    overrides, and the `PYTHON_*` target lists a Makefile may read, would change
+    what the target runs, so those variables are removed from the child
+    environment (other variables, such as `UV_GATE_ALLOW_ONLINE`, are kept). The target's own
     prerequisites (the environment build) are treated as up to date: the tests
     drive the recipe, not the build.
 
