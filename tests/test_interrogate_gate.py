@@ -137,8 +137,8 @@ _MAKE_STATE = frozenset({
     "MAKEOVERRIDES",
     "UV",
 })
-# Interrogate 1.7.0 skips any path under a target whose name begins with one of
-# these (virtual environments and version-control directories).
+# Interrogate 1.7.0 skips a path whose first component below a target begins with
+# one of these (virtual environments and version-control directories).
 _EXCLUDED_PREFIXES = (".tox", ".venv", "venv", ".git", ".hg")
 
 
@@ -151,12 +151,43 @@ def test_no_tracked_file_hides_behind_a_default_exclusion() -> None:
         for target in targets
         if Path(name).is_relative_to(target)
         and Path(name) != target
-        and any(
-            part.startswith(_EXCLUDED_PREFIXES)
-            for part in Path(name).relative_to(target).parts
-        )
+        and Path(name).relative_to(target).parts[0].startswith(_EXCLUDED_PREFIXES)
     ]
     assert not hidden, f"interrogate skips these by default: {hidden}"
+
+
+def _make_interrogate(*assignments: str) -> subprocess.CompletedProcess[str]:
+    """Run `make interrogate` with the given variable assignments.
+
+    A parent Make's flags, a caller's UV or INTERROGATE_* overrides would change
+    what the target runs, so the run starts from a clean environment. The
+    target's own prerequisites (the environment build) are treated as up to
+    date: the tests drive the recipe, not the build.
+
+    Returns
+    -------
+    subprocess.CompletedProcess[str]
+        The finished `make` process with its captured output.
+    """
+    make = shutil.which("make")
+    assert make, "make must be on PATH"
+    environment = {
+        name: value
+        for name, value in os.environ.items()
+        if name not in _MAKE_STATE and not name.startswith("INTERROGATE")
+    }
+    skipped = [
+        argument
+        for prerequisite in _prerequisites("interrogate")
+        for argument in ("-o", prerequisite)
+    ]
+    return subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - fixed argv
+        [make, "-C", str(ROOT), *skipped, "interrogate", *assignments],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=environment,
+    )
 
 
 def _run_target(tmp_path: Path, script: str) -> subprocess.CompletedProcess[str]:
@@ -174,31 +205,60 @@ def _run_target(tmp_path: Path, script: str) -> subprocess.CompletedProcess[str]
         encoding="utf-8",
     )
     stub.chmod(0o755)
-    make = shutil.which("make")
-    assert make, "make must be on PATH"
-    # `-o build` treats the prerequisite as up to date: the stub needs no environment.
-    # A parent Make's flags, a caller's UV or INTERROGATE_* overrides would change
-    # what the stub receives, so the run starts from a clean environment.
-    environment = {
-        name: value
-        for name, value in os.environ.items()
-        if name not in _MAKE_STATE and not name.startswith("INTERROGATE")
-    }
-    return subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - fixed argv
-        [
-            make,
-            "-C",
-            str(ROOT),
-            "-o",
-            "build",
-            "interrogate",
-            f"INTERROGATE={shlex.quote(str(stub))}",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=environment,
+    return _make_interrogate(f"INTERROGATE={shlex.quote(str(stub))}")
+
+
+def _run_real_tool(
+    tmp_path: Path, definitions: int, undocumented: int
+) -> subprocess.CompletedProcess[str]:
+    """Run `make interrogate` with the real tool over a generated package.
+
+    The package holds ``definitions`` documented functions and then
+    ``undocumented`` functions without a docstring.
+
+    Returns
+    -------
+    subprocess.CompletedProcess[str]
+        The finished `make` process with its captured output.
+    """
+    package = tmp_path / "generated"
+    package.mkdir()
+    documented = "".join(
+        f'def documented_{n}() -> None:\n    """Document {n}."""\n\n\n'
+        for n in range(definitions)
     )
+    bare = "".join(
+        f"def bare_{n}() -> None:\n    pass\n\n\n" for n in range(undocumented)
+    )
+    (package / "mod.py").write_text(
+        '"""Generated module."""\n\n\n' + documented + bare, encoding="utf-8"
+    )
+    return _make_interrogate(f"INTERROGATE_TARGETS={shlex.quote(str(package))}")
+
+
+def test_a_documented_package_passes_the_real_gate(tmp_path: Path) -> None:
+    """A package whose every definition has a docstring passes the real tool."""
+    result = _run_real_tool(tmp_path, definitions=5, undocumented=0)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_an_undocumented_function_fails_the_real_gate(tmp_path: Path) -> None:
+    """One undocumented function fails the real tool and reports a MISSED row."""
+    result = _run_real_tool(tmp_path, definitions=5, undocumented=1)
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert "MISSED" in result.stdout, result.stdout
+
+
+def test_a_gap_hidden_by_rounding_still_fails_the_target(tmp_path: Path) -> None:
+    """One missing docstring among 4,000 rounds to 100% yet fails the target.
+
+    The tool alone accepts the report (its percentage rounds to 100.0), so this
+    proves the MISSED-row guard is what rejects the lone gap.
+    """
+    result = _run_real_tool(tmp_path, definitions=4000, undocumented=1)
+    assert "RESULT: PASSED" in result.stdout, "the rounded percentage must pass"
+    assert result.returncode != 0, "the MISSED guard must still fail the target"
+    assert "undocumented definitions remain" in result.stderr, result.stderr
 
 
 def test_the_target_passes_when_the_tool_reports_no_gap(tmp_path: Path) -> None:

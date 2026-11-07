@@ -284,10 +284,10 @@ coverage across `$(INTERROGATE_TARGETS)`: `$(PYTHON_TARGETS)` and `scripts`.
 here, and it ships with complete docstrings. The target prints every definition
 it scans and also fails on any `MISSED` row, because interrogate rounds its
 percentage to one decimal and so can pass a lone gap in a sufficiently large
-codebase. Interrogate 1.7.0 skips any path under a target whose name begins with
-`.tox`, `.venv`, `venv`, `.git` or `.hg`; `tests/test_interrogate_gate.py`
-fails if a tracked Python file sits under such a name inside a target, and
-asserts the rest of the wiring.
+codebase. Interrogate 1.7.0 skips a path whose first component below a target
+begins with `.tox`, `.venv`, `venv`, `.git` or `.hg`;
+`tests/test_interrogate_gate.py` fails if a tracked Python file sits at such a
+name directly under a target, and asserts the rest of the wiring.
 
 ### Pylint tier
 
