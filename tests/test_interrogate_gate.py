@@ -4,7 +4,7 @@
 repository owns (interrogate itself skips some path prefixes, so a new file
 should appear in the verbose report), at a threshold of 100, with a guard that
 fails on any `MISSED` row (interrogate rounds its percentage to one decimal, so
-the threshold alone passes a lone gap in a large repository). These tests read
+the threshold alone can pass a lone gap in a large repository). These tests read
 the recipe and also run the target against a stub tool, so a deleted flag, a
 dropped prerequisite or a guard that stops failing breaks a test rather than
 silently restoring the gap.
@@ -14,7 +14,9 @@ Run via ``make test``.
 
 from __future__ import annotations
 
+import os
 import re
+import shlex
 import shutil
 import subprocess  # ruff: ignore[suspicious-subprocess-import] - runs git and make with fixed argv
 import textwrap
@@ -101,7 +103,7 @@ def test_interrogate_is_declared_phony() -> None:
 
 
 def test_the_flags_demand_a_full_exact_report() -> None:
-    """Exactly: every definition printed and a threshold of 100.
+    """Exactly: every scanned definition printed and a threshold of 100.
 
     Equality, not a deny-list: any other flag (an ignore or exclude option, or
     `-q` and `-o`, which suppress or redirect the report the guard reads) could
@@ -127,6 +129,36 @@ def test_every_python_directory_is_a_target() -> None:
     assert not uncovered, f"add these to INTERROGATE_TARGETS: {uncovered}"
 
 
+_MAKE_STATE = frozenset({
+    "MAKEFLAGS",
+    "MFLAGS",
+    "GNUMAKEFLAGS",
+    "MAKELEVEL",
+    "MAKEOVERRIDES",
+    "UV",
+})
+# Interrogate 1.7.0 skips any path under a target whose name begins with one of
+# these (virtual environments and version-control directories).
+_EXCLUDED_PREFIXES = (".tox", ".venv", "venv", ".git", ".hg")
+
+
+def test_no_tracked_file_hides_behind_a_default_exclusion() -> None:
+    """A tracked file interrogate skips by default would never be measured."""
+    targets = [Path(t) for t in _expanded("INTERROGATE_TARGETS").split()]
+    hidden = [
+        name
+        for name in _tracked("*.py", "*.pyi")
+        for target in targets
+        if Path(name).is_relative_to(target)
+        and Path(name) != target
+        and any(
+            part.startswith(_EXCLUDED_PREFIXES)
+            for part in Path(name).relative_to(target).parts
+        )
+    ]
+    assert not hidden, f"interrogate skips these by default: {hidden}"
+
+
 def _run_target(tmp_path: Path, script: str) -> subprocess.CompletedProcess[str]:
     """Run `make interrogate` with the tool replaced by a stub script.
 
@@ -145,11 +177,27 @@ def _run_target(tmp_path: Path, script: str) -> subprocess.CompletedProcess[str]
     make = shutil.which("make")
     assert make, "make must be on PATH"
     # `-o build` treats the prerequisite as up to date: the stub needs no environment.
+    # A parent Make's flags, a caller's UV or INTERROGATE_* overrides would change
+    # what the stub receives, so the run starts from a clean environment.
+    environment = {
+        name: value
+        for name, value in os.environ.items()
+        if name not in _MAKE_STATE and not name.startswith("INTERROGATE")
+    }
     return subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - fixed argv
-        [make, "-C", str(ROOT), "-o", "build", "interrogate", f"INTERROGATE={stub}"],
+        [
+            make,
+            "-C",
+            str(ROOT),
+            "-o",
+            "build",
+            "interrogate",
+            f"INTERROGATE={shlex.quote(str(stub))}",
+        ],
         capture_output=True,
         text=True,
         check=False,
+        env=environment,
     )
 
 
@@ -175,6 +223,7 @@ def test_the_target_fails_when_the_tool_fails(tmp_path: Path) -> None:
     """A failing tool fails the target."""
     result = _run_target(tmp_path, "echo 'FAILED'\nexit 1\n")
     assert result.returncode != 0, "a failing tool must fail the target"
+    assert "FAILED" in result.stdout, "the failing report must still be printed"
 
 
 @pytest.mark.parametrize(
@@ -195,3 +244,4 @@ def test_the_target_fails_on_a_missed_row_the_percentage_hid(
     )
     assert result.returncode != 0, "a MISSED row must fail the target"
     assert "undocumented definitions remain" in result.stderr, result.stderr
+    assert "f.main (L3)" in result.stdout, "the report must still be printed"

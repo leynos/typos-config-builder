@@ -282,9 +282,12 @@ as a consumer's configuration; do not edit `typos.toml` by hand.
 coverage across `$(INTERROGATE_TARGETS)`: `$(PYTHON_TARGETS)` and `scripts`.
 `scripts/uv_gate.py` is the vendored shared-actions helper; it is not edited
 here, and it ships with complete docstrings. The target prints every definition
-and also fails on any `MISSED` row, because interrogate rounds its percentage
-to one decimal and so passes a lone gap; `tests/test_interrogate_gate.py`
-asserts the wiring.
+it scans and also fails on any `MISSED` row, because interrogate rounds its
+percentage to one decimal and so can pass a lone gap in a sufficiently large
+codebase. Interrogate 1.7.0 skips any path under a target whose name begins with
+`.tox`, `.venv`, `venv`, `.git` or `.hg`; `tests/test_interrogate_gate.py`
+fails if a tracked Python file sits under such a name inside a target, and
+asserts the rest of the wiring.
 
 ### Pylint tier
 
