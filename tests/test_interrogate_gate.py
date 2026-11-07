@@ -19,6 +19,7 @@ import re
 import shlex
 import shutil
 import subprocess  # ruff: ignore[suspicious-subprocess-import] - runs git and make with fixed argv
+import sys
 import textwrap
 from pathlib import Path
 
@@ -230,7 +231,11 @@ def _run_real_tool(
     """Run `make interrogate` with the real tool over a generated package.
 
     The package holds ``definitions`` documented functions and then
-    ``undocumented`` functions without a docstring.
+    ``undocumented`` functions without a docstring. The tool is the
+    ``interrogate`` installed in the interpreter that runs the tests (a
+    development dependency), so the run needs no download: the default
+    ``uv run`` route would build the project environment offline, and fail
+    wherever the cache lacks a development tool.
 
     Returns
     -------
@@ -249,7 +254,10 @@ def _run_real_tool(
     (package / "mod.py").write_text(
         '"""Generated module."""\n\n\n' + documented + bare, encoding="utf-8"
     )
-    return _make_interrogate(f"INTERROGATE_TARGETS={_make_value(package)}")
+    return _make_interrogate(
+        f"INTERROGATE={_make_value(Path(sys.executable))} -m interrogate",
+        f"INTERROGATE_TARGETS={_make_value(package)}",
+    )
 
 
 def test_a_documented_package_passes_the_real_gate(tmp_path: Path) -> None:
