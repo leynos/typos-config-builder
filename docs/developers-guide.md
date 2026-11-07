@@ -290,6 +290,13 @@ begins with `.tox`, `.venv`, `venv`, `.git` or `.hg`;
 name, or in a directory of that name, directly under a target, and asserts the
 rest of the wiring.
 
+The tests that run the real gate over a generated package call the
+`interrogate` installed in the interpreter that runs the tests (a development
+dependency), through `python -m interrogate`. They do not rebuild the project
+environment with `uv run`, which works offline only when the uv cache holds
+every development tool, so they need no download on a runner that has none. The
+interpreter running them must therefore have `interrogate` installed.
+
 ### Pylint tier
 
 `make lint-python` runs a pinned Pylint release (`PYLINT_VERSION`) through
