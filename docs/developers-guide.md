@@ -276,6 +276,20 @@ relevant formatting, lint, type, test, spelling, and audit targets before
 commit. The package's own spelling configuration is generated in the same way
 as a consumer's configuration; do not edit `typos.toml` by hand.
 
+### Docstring coverage
+
+`make lint-python` first runs `make interrogate`, which requires 100% docstring
+coverage across `$(INTERROGATE_TARGETS)`: `$(PYTHON_TARGETS)` and `scripts`.
+`scripts/uv_gate.py` is the vendored shared-actions helper; it is not edited
+here, and it ships with complete docstrings. The target prints every definition
+it scans and also fails on any `MISSED` row, because interrogate rounds its
+percentage to one decimal and so can pass a lone gap in a sufficiently large
+codebase. Interrogate 1.7.0 skips a path whose first component below a target
+begins with `.tox`, `.venv`, `venv`, `.git` or `.hg`;
+`tests/test_interrogate_gate.py` fails if a tracked Python file sits at such a
+name, or in a directory of that name, directly under a target, and asserts the
+rest of the wiring.
+
 ### Pylint tier
 
 `make lint-python` runs a pinned Pylint release (`PYLINT_VERSION`) through
