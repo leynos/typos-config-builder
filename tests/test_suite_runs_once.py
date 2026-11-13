@@ -53,6 +53,21 @@ def _document(name: str) -> dict[object, object]:
         ("set -eu && make test", True),
         ("uv run pytest -v", True),
         ("uv run --with 'pytest>=8' python -m pytest -q", True),
+        (
+            (
+                "uv run --locked pytest -q "
+                "tests/test_phrase_file_open_windows_integration.py"
+            ),
+            False,
+        ),
+        (
+            (
+                "uv run --locked pytest -q "
+                "tests/test_phrase_file_open_windows_integration.py "
+                "tests/test_phrases_files.py"
+            ),
+            True,
+        ),
         ("make test-workflow-contracts", False),
         ("make typecheck", False),
         ("echo pytest", False),

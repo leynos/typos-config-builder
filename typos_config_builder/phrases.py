@@ -20,20 +20,19 @@ import typing as typ
 
 import pathspec
 
-from typos_config_builder import builder
+from typos_config_builder import builder, phrase_scan
 from typos_config_builder import patterns as pattern_policy
 from typos_config_builder import policy as policy_document
 from typos_config_builder.phrases_files import (
     POLICY_PATHS,
     PhraseScanError,
-    is_inside_worktree,
-    read_tracked_text,
     tracked_files,
 )
 
 if typ.TYPE_CHECKING:
     import collections.abc as cabc
     import pathlib
+
 
 # Tracked-file selection lives in :mod:`typos_config_builder.phrases_files`,
 # and is re-exported here so callers keep one import site for the phrase gate.
@@ -337,10 +336,7 @@ def find_phrases(
         if relative in POLICY_PATHS or exclusions.match_file(relative.as_posix()):
             continue
         candidate = repository / relative
-        if not is_inside_worktree(candidate, root):
-            continue
-        text = read_tracked_text(candidate, relative)
-        if text is None:
-            continue
-        findings.extend(scanner.scan(relative, text))
+        tracked_text = phrase_scan.read_scannable_text(candidate, relative, root)
+        if tracked_text is not None:
+            findings.extend(scanner.scan(relative, tracked_text))
     return tuple(findings)
