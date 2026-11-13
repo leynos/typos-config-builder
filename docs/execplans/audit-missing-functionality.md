@@ -593,7 +593,7 @@ blank masking),
 ## Conformance basis
 
 Upstream artefacts: `docs/typos-config-builder-design.md` (Accepted),
-`docs/adrs/0001-keep-the-builder-focused.md` (Accepted 2026-07-14, to be
+`docs/adrs/adr-0001-keep-the-builder-focused.md` (Accepted 2026-07-14, to be
 amended in M6),
 `agent-helper-scripts/docs/adr/003-shared-oxford-spelling-base.md` (Accepted
 2026-07-10), and the sweep report's recommendations R1 to R14. There is no
