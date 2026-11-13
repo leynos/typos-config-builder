@@ -323,8 +323,8 @@ corrections, but it still does not:
 
 These limits keep the package focused on applying the shared spelling policy
 consistently, rather than becoming a general estate-tooling platform. See
-[ADR 0001](adrs/0001-keep-the-builder-focused.md) for the full boundary and its
-2026-09-14 amendment.
+[ADR 0001](adrs/adr-0001-keep-the-builder-focused.md) for the full boundary and
+its 2026-09-14 amendment.
 
 ## Migrating an existing consumer
 

@@ -28,7 +28,7 @@ documentation set.
 
 - [typos-config-builder design](typos-config-builder-design.md) defines the
   deterministic generation pipeline and its deliberate boundaries.
-- [ADR 0001: Keep the builder focused](adrs/0001-keep-the-builder-focused.md)
+- [ADR 0001: Keep the builder focused](adrs/adr-0001-keep-the-builder-focused.md)
   records why rollout, harvesting, and tool orchestration remain out of scope.
 
 ## Engineering practice

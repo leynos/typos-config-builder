@@ -2,7 +2,7 @@
 
 This guide is for maintainers of the focused `typos-config-builder` package. The
 [design](typos-config-builder-design.md), [repository layout](repository-layout.md),
-and [scope decision](adrs/0001-keep-the-builder-focused.md) define its
+and [scope decision](adrs/adr-0001-keep-the-builder-focused.md) define its
 boundaries.
 
 ## Implementation contract
@@ -120,7 +120,7 @@ was asked to check. A tracked file that has been replaced by a directory is an
 error, not a skip, because that is a worktree anomaly rather than policy.
 
 Typos execution is in scope per the amendment to
-[ADR 0001](adrs/0001-keep-the-builder-focused.md): running the pinned Typos
+[ADR 0001](adrs/adr-0001-keep-the-builder-focused.md): running the pinned Typos
 binary and enforcing `[phrases.corrections]` are part of applying the shared
 policy consistently, not general-purpose tool orchestration.
 

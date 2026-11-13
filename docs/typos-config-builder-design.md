@@ -6,7 +6,7 @@ Scope: The Python 3.14 CLI that produces consumer `typos.toml` files.
 
 Audience: Maintainers and reviewers.
 
-Governing decision: [ADR 0001](adrs/0001-keep-the-builder-focused.md).
+Governing decision: [ADR 0001](adrs/adr-0001-keep-the-builder-focused.md).
 
 ## 1. Design goal
 
