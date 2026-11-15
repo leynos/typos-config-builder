@@ -25,7 +25,7 @@ Repositories that have not yet adopted the `gate` command should follow
 2. Run the `gate` command once and read the `metric` lines it writes to
    standard error. Each line reports a fixed skip or failure reason and a
    count, for example
-   `metric phrase_scan_files_skipped_total{reason=size-limit}=2`.
+   `metric phrase_scan_files_skipped_total{reason=oversized}=2`.
 3. For each non-zero skip count, decide whether the input mattered. A tracked
    symbolic link or a file over 1 MiB is now skipped rather than read, so a
    phrase the check used to report from it is no longer reported.
@@ -54,9 +54,12 @@ Repositories that have not yet adopted the `gate` command should follow
 - Failure classifications are fixed: a metadata failure, a read failure, and a
   tracked file replaced by a directory each publish their own reason label. The
   process still exits with code 1 and prints one `error: ...` line.
-- A library caller of `phrases.find_phrases` now receives findings and outcomes
-  in a `PhraseScanResult` and can publish them itself, so importing the package
-  no longer has an observability side effect.
+- A library caller of `phrases.find_phrases` now supplies a
+  `TrackedTextSource`. `phrase_source.RepositoryTextSource` wraps a Git
+  worktree, while a double can yield the same records in memory.
+  `PhraseScanResult.outcomes` carries the domain `SkipReason` values, and
+  `phrase_scan_reporting` owns the log and metric labels for them. Importing
+  the package still has no observability side effect.
 
 ## Rollout status
 
