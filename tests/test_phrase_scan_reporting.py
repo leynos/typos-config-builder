@@ -12,14 +12,8 @@ import logging
 import pathlib
 import typing as typ
 
-from typos_config_builder import phrase_scan_reporting
-from typos_config_builder.phrase_scan_results import (
-    ReadOutcome,
-    ScanEligibility,
-    ScanFailure,
-    metric_counts,
-)
-from typos_config_builder.phrases_files import PhraseScanError
+from typos_config_builder import phrase_scan_reporting, phrases
+from typos_config_builder.phrase_scan_reporting import metric_counts
 
 if typ.TYPE_CHECKING:
     import pytest
@@ -58,11 +52,11 @@ def test_outcomes_are_logged_once_each_without_tracked_input(
 ) -> None:
     """Every published outcome yields one path-free record and one count."""
     outcomes = (
-        ScanEligibility.SYMLINK,
-        ReadOutcome.BINARY,
-        ScanEligibility.OUTSIDE_WORKTREE,
-        ReadOutcome.OVERSIZED,
-        ScanEligibility.NON_REGULAR,
+        phrases.SkipReason.SYMLINK,
+        phrases.SkipReason.BINARY,
+        phrases.SkipReason.OUTSIDE_WORKTREE,
+        phrases.SkipReason.OVERSIZED,
+        phrases.SkipReason.NON_REGULAR,
     )
 
     with caplog.at_level(logging.DEBUG, logger="typos_config_builder"):
@@ -94,7 +88,11 @@ def test_repeated_reasons_are_counted_together(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Repeated outcomes aggregate into a single bounded counter line."""
-    outcomes = (ReadOutcome.BINARY, ReadOutcome.BINARY, ScanEligibility.SYMLINK)
+    outcomes = (
+        phrases.SkipReason.BINARY,
+        phrases.SkipReason.BINARY,
+        phrases.SkipReason.SYMLINK,
+    )
 
     phrase_scan_reporting.publish_scan_outcomes(outcomes)
 
@@ -121,7 +119,9 @@ def test_failure_is_published_as_a_failure_counter(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A fail-closed scan is reported under the failure counter."""
-    error = PhraseScanError(pathlib.Path("README.md"), ScanFailure.READ)
+    error = phrases.PhraseScanError(
+        pathlib.Path("README.md"), phrases.ScanFailureReason.READ
+    )
 
     with caplog.at_level(logging.DEBUG, logger="typos_config_builder"):
         phrase_scan_reporting.publish_scan_failure(error)
@@ -139,10 +139,18 @@ def test_failure_is_published_as_a_failure_counter(
     assert "README" not in captured.out, "never print a tracked path"
 
 
-def test_failure_counter_is_separate_from_the_skip_counter() -> None:
+def test_failure_counter_is_separate_from_the_skip_counter(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Failure and skip counters never share a label set."""
-    assert metric_counts((ScanFailure.METADATA,)) == {"metadata-failure": 1}
-    assert metric_counts((ScanEligibility.OVERSIZED,)) == {"oversized": 1}
-    assert not metric_counts((ReadOutcome.TEXT, ScanEligibility.ELIGIBLE)), (
-        "a successful read is not a skip"
+    phrase_scan_reporting.publish_scan_failure(
+        phrases.PhraseScanError(
+            pathlib.Path("README.md"), phrases.ScanFailureReason.METADATA
+        )
     )
+
+    assert metric_counts((phrases.SkipReason.OVERSIZED,)) == {"oversized": 1}
+    assert not metric_counts(()), "a successful read is not a skip"
+    assert _metric_lines(capsys) == [
+        "metric phrase_scan_files_failed_total{reason=metadata-failure}=1"
+    ], "count the failure under its own fixed label"

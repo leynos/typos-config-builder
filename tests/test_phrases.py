@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses as dc
 import pathlib
 import typing as typ
 
@@ -16,7 +17,7 @@ from conftest import (
 from hypothesis import event, given
 from hypothesis import strategies as st
 
-from typos_config_builder import phrases
+from typos_config_builder import phrase_source, phrases
 
 if typ.TYPE_CHECKING:
     import collections.abc as cabc
@@ -38,6 +39,13 @@ def bare_policy(
         ignore_patterns=tuple(ignore),
         excluded_files=tuple(exclude),
     )
+
+
+def _find_phrases(
+    repository: pathlib.Path, policy: phrases.PhrasePolicy
+) -> phrases.PhraseScanResult:
+    """Run the domain phrase query through the Git worktree adapter."""
+    return phrases.find_phrases(phrase_source.RepositoryTextSource(repository), policy)
 
 
 def test_load_policy_merges_shared_and_overlay_phrases(tmp_path: pathlib.Path) -> None:
@@ -86,9 +94,7 @@ def test_findings_report_exact_location_and_original_case(
         },
     )
 
-    findings = phrases.find_phrases(
-        repository, phrases.load_policy(repository)
-    ).findings
+    findings = _find_phrases(repository, phrases.load_policy(repository)).findings
 
     assert [
         (str(item.path), item.line, item.column, item.phrase, item.correction)
@@ -111,9 +117,7 @@ def test_boundaries_exclude_adjacent_word_characters(tmp_path: pathlib.Path) -> 
         },
     )
 
-    findings = phrases.find_phrases(
-        repository, phrases.load_policy(repository)
-    ).findings
+    findings = _find_phrases(repository, phrases.load_policy(repository)).findings
 
     assert [(item.line, item.column) for item in findings] == [(3, 1)]
 
@@ -134,9 +138,7 @@ def test_ignore_patterns_mask_inline_code_and_fenced_blocks(
         },
     )
 
-    findings = phrases.find_phrases(
-        repository, phrases.load_policy(repository)
-    ).findings
+    findings = _find_phrases(repository, phrases.load_policy(repository)).findings
 
     assert [(item.line, item.column) for item in findings] == [(7, 6)]
 
@@ -160,9 +162,7 @@ def test_excluded_globs_apply_in_normalized_order(tmp_path: pathlib.Path) -> Non
         },
     )
 
-    findings = phrases.find_phrases(
-        repository, phrases.load_policy(repository)
-    ).findings
+    findings = _find_phrases(repository, phrases.load_policy(repository)).findings
 
     assert [str(item.path) for item in findings] == ["notes.txt"]
 
@@ -232,4 +232,35 @@ def test_generated_ignored_spans_stay_masked(content: str) -> None:
     )
     assert phrases.scan_text(path, text, bare_policy()), (
         "the unmasked control found nothing, so the property is vacuous"
+    )
+
+
+@dc.dataclass(frozen=True, slots=True)
+class _MappingSource:
+    """Yield a fixed sequence of tracked inputs without any filesystem access."""
+
+    records: tuple[phrases.TrackedInput, ...]
+
+    def tracked_inputs(self) -> cabc.Iterator[phrases.TrackedInput]:
+        """Yield each supplied record in order."""
+        return iter(self.records)
+
+
+def test_find_phrases_queries_an_injected_tracked_text_source() -> None:
+    """The domain query reads its injected port, never the filesystem or Git."""
+    source = _MappingSource((
+        phrases.TrackedText(pathlib.Path("NOTES.md"), f"Prefer {PROHIBITED}.\n"),
+        phrases.SkippedInput(pathlib.Path("logo.png"), phrases.SkipReason.BINARY),
+        phrases.TrackedText(
+            pathlib.Path(".typos-oxendict-base.toml"), f"{PROHIBITED}\n"
+        ),
+    ))
+
+    result = phrases.find_phrases(source, bare_policy())
+
+    assert [(item.path, item.line, item.column) for item in result.findings] == [
+        (pathlib.Path("NOTES.md"), 1, 8)
+    ], "scan text records and skip a policy document"
+    assert result.outcomes == (phrases.SkipReason.BINARY,), (
+        "report the domain skip reason for a skipped input"
     )

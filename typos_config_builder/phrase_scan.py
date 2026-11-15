@@ -15,7 +15,7 @@ from typos_config_builder.phrase_scan_results import (
     ScanFailure,
     ScannableText,
 )
-from typos_config_builder.phrases_files import PhraseScanError
+from typos_config_builder.phrases_files import TrackedFileError
 
 if typ.TYPE_CHECKING:
     import pathlib
@@ -34,7 +34,7 @@ def _scan_eligibility_for_path(
             max_file_size_bytes=phrases_files.MAX_FILE_SIZE_BYTES,
         )
     except OSError as error:
-        raise PhraseScanError(relative, ScanFailure.METADATA) from error
+        raise TrackedFileError(relative, ScanFailure.METADATA) from error
 
 
 def read_scannable_text(
@@ -64,7 +64,7 @@ def read_scannable_text(
 
     Raises
     ------
-    PhraseScanError
+    TrackedFileError
         If metadata or content cannot be read, or a tracked entry has been
         replaced by a directory. The error carries a fixed failure category.
 
@@ -84,7 +84,7 @@ def read_scannable_text(
     eligibility = _scan_eligibility_for_path(candidate, relative, root)
     if not eligibility.is_eligible:
         if eligibility.fails_scan:
-            raise PhraseScanError(relative, ScanFailure.DIRECTORY_REPLACEMENT)
+            raise TrackedFileError(relative, ScanFailure.DIRECTORY_REPLACEMENT)
         return ScannableText(None, eligibility)
     tracked_text = phrases_files.read_tracked_text(root, relative)
     if tracked_text.text is not None:

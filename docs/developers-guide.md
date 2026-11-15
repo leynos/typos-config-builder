@@ -33,16 +33,21 @@ The package keeps a small, acyclic dependency graph:
 - `cli` imports `builder`, `phrases`, `gate`, and `phrase_scan_reporting`.
 - `gate` imports `builder`, `phrases`, `phrases_files`, and
   `phrase_scan_reporting`.
-- `phrases` imports `builder`, `policy`, `patterns`, `phrases_files`, and
-  `phrase_scan`; `phrase_scan` imports `phrases_files` and the leaf
-  `phrase_scan_results` module for fixed eligibility and read outcomes. Both
-  are queries: they return typed outcomes and never publish a diagnostic or
-  metric.
-- `phrase_scan_reporting` imports `phrases`, `phrase_scan_results`, and
-  `phrases_files`, and only the command modules `cli` and `gate` import it. It
-  owns the single composition point that runs the query and publishes its
-  outcomes, so a command cannot report a completed scan without also reporting
-  a failed one.
+- `phrases` imports `builder`, `policy`, `phrase_matching`, and `pathspec`
+  only, and never the filesystem layer. `phrase_matching` is a leaf that imports
+  `patterns` at runtime: it masks ignored spans and reports prohibited phrases
+  over a string, performing no I/O. Both are queries: they return typed
+  outcomes and never publish a diagnostic or metric.
+- `phrase_source` imports `phrases`, `phrase_scan`, `phrase_scan_results`, and
+  `phrases_files`, and only the command boundary imports it. It is the one
+  adapter that knows both the domain vocabulary and the filesystem layer.
+  `phrase_scan` imports `phrases_files` and the leaf `phrase_scan_results`
+  module for fixed eligibility and read outcomes; it returns typed outcomes
+  without publishing.
+- `phrase_scan_reporting` imports `phrases` and `phrase_source`, and only the
+  command modules `cli` and `gate` import it. It owns the single composition
+  point that runs the query and publishes its outcomes, so a command cannot
+  report a completed scan without also reporting a failed one.
 - `phrases_files` imports the `phrase_file_open` dispatcher to open one
   descriptor safely. The dispatcher loads `phrase_file_open_windows` only on
   Windows; that adapter uses `phrase_file_open_windows_native` for native API
@@ -69,8 +74,7 @@ Exactly two modules start a process, and each owns a different tool:
 - `phrases_files.py` runs `git`, resolving the executable through
   `shutil.which` and closing standard input so a command double cannot wedge
   the gate on an inherited terminal. It lists tracked files and reads their
-  text, failing closed as described below; `phrases.py` imports it for both and
-  re-exports `tracked_files` so callers keep one import site.
+  text, failing closed as described below.
 - `gate.py` runs the pinned Typos binary. The console script must be
   installed beside `sys.executable`; there is no `PATH` fallback, so an
   unrelated Typos binary elsewhere on `PATH` can never stand in. Paths are
@@ -79,7 +83,8 @@ Exactly two modules start a process, and each owns a different tool:
   stage's result.
 
 Neither module imports the other's subprocess call; `gate.py` reaches tracked
-files through `phrases.tracked_files`, which delegates to `phrases_files.py`.
+files through `phrases_files.tracked_files` directly, and the domain reaches
+Git enumeration only through the `phrase_source` adapter.
 
 ### The four-hundred-line rule
 
@@ -87,15 +92,16 @@ Keep each module under four hundred lines; split a module into a sibling before
 appending further behaviour once it approaches the limit. `gate.py` stands at
 399 lines, so new behaviour there belongs in a sibling module rather than
 another helper. Headroom is thin in `phrase_file_open_windows_native.py` at 397
-lines, `phrases_files.py` at 395 lines, `remote.py` at 381 lines, and
-`phrases.py` at 369 lines. The `remote.py` module owns the HTTPS path, the
-bounded response read, the cache-identity checks, and the bounded refresh
-diagnostics. Prefer a new sibling module over growing any of these further.
-`GateOptions` groups the authority, cache policy, and scope because `gate`
-would otherwise exceed the repository's four-argument limit once the runner
-seam is included. The runner seam is a `typ.Protocol` naming only the subset of
-`subprocess.run` the gate uses, so a test records invocations without starting
-a process.
+lines, `phrases_files.py` at 386 lines, and `remote.py` at 381 lines.
+`phrases.py` is at 305 lines, its pure matcher `phrase_matching.py` at 227, and
+the `phrase_source.py` adapter at 152. The `remote.py` module owns the HTTPS
+path, the bounded response read, the cache-identity checks, and the bounded
+refresh diagnostics. Prefer a new sibling module over growing any of these
+further. `GateOptions` groups the authority, cache policy, and scope because
+`gate` would otherwise exceed the repository's four-argument limit once the
+runner seam is included. The runner seam is a `typ.Protocol` naming only the
+subset of `subprocess.run` the gate uses, so a test records invocations without
+starting a process.
 
 ### Type-scoped rendering
 
@@ -118,14 +124,17 @@ selection rule in `policy.py` and the emission in a small helper in
 ### Fail-closed and worktree-escape rules
 
 A tracked file whose bytes are not UTF-8 is binary as far as a phrase check is
-concerned, so `read_tracked_text` returns an internal result with no text and a
-fixed read outcome. The scanner then moves on to the next file. `is_scannable`,
-`read_tracked_text`, and the phrase query `phrases.find_phrases` are silent:
-they classify inputs and return fixed outcomes, and
-`phrase_scan_reporting.find_and_publish` publishes them at the command boundary
-in `cli.check_phrases` and `gate`. Publication is one debug record per outcome,
-carrying the fixed decision and error class but never a tracked path or its
-content, plus `phrase_scan_files_skipped_total` and
+concerned, so the filesystem layer returns an internal result with no text and
+a fixed read outcome. `scan_eligibility`, `read_tracked_text`, and
+`phrase_scan.read_scannable_text` classify and read without logging, and
+`phrase_source.RepositoryTextSource` maps each filesystem outcome to a domain
+`SkipReason` or `ScanFailureReason`, raising `phrases.PhraseScanError` for a
+fail-closed read. `phrases.find_phrases` is then a pure query over the injected
+`TrackedTextSource` port: it neither reads a file nor logs.
+`phrase_scan_reporting.find_and_publish` remains the single publication point,
+used by `cli.check_phrases` and `gate`. Publication is one debug record per
+outcome, carrying the fixed decision and error class but never a tracked path
+or its content, plus `phrase_scan_files_skipped_total` and
 `phrase_scan_files_failed_total` counter lines labelled by fixed reason on
 standard error. A library caller can therefore run the scan without inheriting
 an observability side effect. Repositories legitimately track images, fonts,
@@ -148,13 +157,13 @@ points before traversal, and checks the final descriptor remains inside the
 worktree before reading. This limit intentionally defines which tracked text
 the phrase check examines.
 
-The phrase scan still fails closed on a read error: an unreadable tracked file
-raises `PhraseScanError` with the `OSError` chained, rather than being skipped,
-because that signals the worktree changed under the scan and a silent skip
-hides exactly the file most likely to have drifted. Masking marks every ignored
-span against the original text and blanks the marked characters in one pass,
-which keeps offsets exact and keeps overlapping spans ignored; a sequential
-substitution per pattern does not.
+The phrase scan still fails closed on a read error: the adapter maps an
+unreadable tracked file to `PhraseScanError` with the underlying `OSError`
+chained, rather than skipping it, because that signals the worktree changed
+under the scan and a silent skip hides exactly the file most likely to have
+drifted. Masking marks every ignored span against the original text and blanks
+the marked characters in one pass, which keeps offsets exact and keeps
+overlapping spans ignored; a sequential substitution per pattern does not.
 
 Tracked files are enumerated with their index modes, and submodule gitlinks
 (mode 160000) are dropped at that point so neither the phrase scan nor the
@@ -165,6 +174,14 @@ reader validates the opened descriptor against regular-file and containment
 requirements before reading from it. For the phrase scan, a tracked file
 replaced by a directory raises `PhraseScanError`; it is a worktree anomaly
 rather than policy. Typos selection skips such a path.
+
+The domain owns the port. `phrases.TrackedTextSource` defines the one method a
+source supplies, and `phrase_source.RepositoryTextSource` is the only worktree
+adapter. A new adapter must yield domain records (`TrackedText` or
+`SkippedInput`), must not expose a filesystem enum through `PhraseScanResult`,
+and must raise `phrases.PhraseScanError` rather than a filesystem error. Label
+mapping belongs only in `phrase_scan_reporting`, so a domain reason reaches a
+log or metric through its explicit mapping there.
 
 Typos execution is in scope per the amendment to
 [ADR 0001](adrs/0001-keep-the-builder-focused.md): running the pinned Typos

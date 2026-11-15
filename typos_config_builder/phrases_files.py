@@ -3,7 +3,8 @@
 Deciding which tracked paths carry scannable text is a separate concern from
 matching phrases within that text: it deals with Git enumeration, policy
 documents, symlinks, submodule gitlinks, and the worktree boundary. Keeping it
-here leaves :mod:`typos_config_builder.phrases` to the matching itself.
+here leaves :mod:`typos_config_builder.phrases` to the domain query and
+:mod:`typos_config_builder.phrase_matching` to the matching itself.
 
 Content that is not valid UTF-8 is binary as far as a phrase check is
 concerned, so it is skipped. Selection still fails closed on a read error,
@@ -27,7 +28,6 @@ import stat
 import subprocess  # ruff: ignore[suspicious-subprocess-import]
 import typing as typ
 
-from typos_config_builder import builder
 from typos_config_builder.phrase_file_open import open_tracked_file
 from typos_config_builder.phrase_scan_results import (
     ReadOutcome,
@@ -43,21 +43,12 @@ if typ.TYPE_CHECKING:
 #: another repository rather than tracked text, so no stage may submit it.
 GITLINK_MODE = "160000"
 
-#: Policy documents describe prohibited phrases and must never be scanned for
-#: them, otherwise the policy itself becomes a finding.
-POLICY_PATHS = frozenset({
-    pathlib.Path(builder.CACHE_NAME),
-    pathlib.Path(builder.METADATA_NAME),
-    pathlib.Path(builder.OVERLAY_NAME),
-    pathlib.Path(builder.OUTPUT_NAME),
-})
-
 # One MiB bounds the memory and time spent on a tracked-file read; larger files
 # are skipped because they are not useful prose inputs for phrase checking.
 MAX_FILE_SIZE_BYTES = 1024 * 1024
 
 
-class PhraseScanError(Exception):
+class TrackedFileError(Exception):
     """Report that a tracked file could not be read.
 
     The failure carries a fixed category so the command layer can publish a
@@ -368,7 +359,7 @@ def read_tracked_text(root: pathlib.Path, relative: pathlib.Path) -> TrackedText
 
     Raises
     ------
-    PhraseScanError
+    TrackedFileError
         If the file cannot be read.
 
     Examples
@@ -392,4 +383,4 @@ def read_tracked_text(root: pathlib.Path, relative: pathlib.Path) -> TrackedText
         finally:
             os.close(file_descriptor)
     except OSError as error:
-        raise PhraseScanError(relative, ScanFailure.READ) from error
+        raise TrackedFileError(relative, ScanFailure.READ) from error

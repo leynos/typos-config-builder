@@ -24,8 +24,7 @@ from conftest import (
     overlay_text,
 )
 
-from typos_config_builder import phrases, phrases_files
-from typos_config_builder.phrase_scan_results import ReadOutcome
+from typos_config_builder import phrase_source, phrases, phrases_files
 
 # Placeholder commit identifier for a submodule gitlink. Git records a
 # gitlink without resolving the object, so the commit need not exist.
@@ -46,6 +45,14 @@ def _git(repository: pathlib.Path, *arguments: str) -> None:
     )
 
 
+def _find_phrases(repository: pathlib.Path) -> phrases.PhraseScanResult:
+    """Run the domain phrase query through the Git worktree adapter."""
+    return phrases.find_phrases(
+        phrase_source.RepositoryTextSource(repository),
+        phrases.load_policy(repository),
+    )
+
+
 def test_tracked_symlinks_are_skipped(tmp_path: pathlib.Path) -> None:
     """A tracked symlink is never followed out of the repository."""
     repository = build_repository(tmp_path, {".typos-oxendict-base.toml": cache_text()})
@@ -54,9 +61,9 @@ def test_tracked_symlinks_are_skipped(tmp_path: pathlib.Path) -> None:
     (repository / "external.txt").symlink_to(external)
     _git(repository, "add", "external.txt")
 
-    assert not phrases.find_phrases(
-        repository, phrases.load_policy(repository)
-    ).findings, "the scan followed a tracked symlink out of the repository"
+    assert not _find_phrases(repository).findings, (
+        "the scan followed a tracked symlink out of the repository"
+    )
 
 
 @pytest.mark.skipif(not pathlib.Path("/dev/zero").exists(), reason="requires /dev/zero")
@@ -69,9 +76,7 @@ def test_tracked_symlink_to_unbounded_device_is_skipped(
     link.symlink_to("/dev/zero")
     _git(repository, "add", "README.md")
 
-    findings = phrases.find_phrases(
-        repository, phrases.load_policy(repository)
-    ).findings
+    findings = _find_phrases(repository).findings
     assert not findings, "skip a symlink to /dev/zero"
 
 
@@ -111,9 +116,9 @@ def test_tracked_path_behind_a_symlinked_parent_is_skipped(
     shutil.rmtree(repository / "docs")
     (repository / "docs").symlink_to(outside, target_is_directory=True)
 
-    assert not phrases.find_phrases(
-        repository, phrases.load_policy(repository)
-    ).findings, "the scan read a file outside the repository through a symlinked parent"
+    assert not _find_phrases(repository).findings, (
+        "the scan read a file outside the repository through a symlinked parent"
+    )
 
 
 def test_missing_external_target_behind_symlinked_parent_is_skipped(
@@ -128,9 +133,7 @@ def test_missing_external_target_behind_symlinked_parent_is_skipped(
     outside = tmp_path / "outside"
     outside.mkdir()
     (repository / "docs").symlink_to(outside, target_is_directory=True)
-    findings = phrases.find_phrases(
-        repository, phrases.load_policy(repository)
-    ).findings
+    findings = _find_phrases(repository).findings
     assert not findings, "skip an external target behind a symlink"
 
 
@@ -146,9 +149,9 @@ def test_policy_documents_are_not_scanned(tmp_path: pathlib.Path) -> None:
         },
     )
 
-    assert not phrases.find_phrases(
-        repository, phrases.load_policy(repository)
-    ).findings, "a policy document was reported as a finding"
+    assert not _find_phrases(repository).findings, (
+        "a policy document was reported as a finding"
+    )
 
 
 def test_tracked_file_removed_after_enumeration_fails_closed(
@@ -162,7 +165,7 @@ def test_tracked_file_removed_after_enumeration_fails_closed(
     (repository / "README.md").unlink()
 
     with pytest.raises(phrases.PhraseScanError) as error:
-        phrases.find_phrases(repository, phrases.load_policy(repository))
+        _find_phrases(repository)
 
     assert error.value.path == pathlib.Path("README.md")
     assert isinstance(error.value.__cause__, FileNotFoundError)
@@ -192,9 +195,9 @@ def test_tracked_submodule_directory_is_skipped(tmp_path: pathlib.Path) -> None:
         f"Prefer {PROHIBITED}.\n", encoding="utf-8"
     )
 
-    assert not phrases.find_phrases(
-        repository, phrases.load_policy(repository)
-    ).findings, "the submodule's untracked content was scanned"
+    assert not _find_phrases(repository).findings, (
+        "the submodule's untracked content was scanned"
+    )
 
 
 def test_undecodable_tracked_file_is_skipped_as_binary(
@@ -207,9 +210,9 @@ def test_undecodable_tracked_file_is_skipped_as_binary(
     )
     (repository / "README.md").write_bytes(BINARY_BYTES)
 
-    assert not phrases.find_phrases(
-        repository, phrases.load_policy(repository)
-    ).findings, "binary tracked content produced a finding"
+    assert not _find_phrases(repository).findings, (
+        "binary tracked content produced a finding"
+    )
 
 
 def test_text_beside_a_binary_tracked_file_is_still_scanned(
@@ -226,9 +229,7 @@ def test_text_beside_a_binary_tracked_file_is_still_scanned(
     )
     (repository / "README.md").write_bytes(BINARY_BYTES)
 
-    findings = phrases.find_phrases(
-        repository, phrases.load_policy(repository)
-    ).findings
+    findings = _find_phrases(repository).findings
 
     assert [finding.path for finding in findings] == [pathlib.Path("NOTES.md")]
 
@@ -245,9 +246,7 @@ def test_oversized_tracked_text_is_skipped(
         },
     )
     monkeypatch.setattr(phrases_files, "MAX_FILE_SIZE_BYTES", 8)
-    findings = phrases.find_phrases(
-        repository, phrases.load_policy(repository)
-    ).findings
+    findings = _find_phrases(repository).findings
     assert not findings, "skip oversized tracked text"
 
 
@@ -287,7 +286,7 @@ def test_read_failure_is_wrapped_with_the_tracked_path(
 
     monkeypatch.setattr(os, "read", fail_read)
 
-    with pytest.raises(phrases_files.PhraseScanError) as error:
+    with pytest.raises(phrases_files.TrackedFileError) as error:
         phrases_files.read_tracked_text(tmp_path, relative)
 
     assert error.value.path == relative, "retain the tracked path"
@@ -306,9 +305,7 @@ def test_ordinary_utf8_text_still_reports_phrase_findings(
         },
     )
 
-    findings = phrases.find_phrases(
-        repository, phrases.load_policy(repository)
-    ).findings
+    findings = _find_phrases(repository).findings
 
     expected = (
         phrases.PhraseFinding(pathlib.Path("README.md"), 2, 8, PROHIBITED, CORRECTION),
@@ -326,9 +323,11 @@ def test_skipping_binary_content_reports_one_bounded_outcome(
     )
     (repository / "README.md").write_bytes(BINARY_BYTES)
 
-    result = phrases.find_phrases(repository, phrases.load_policy(repository))
+    result = _find_phrases(repository)
 
-    assert result.outcomes == (ReadOutcome.BINARY,), "report exactly one binary skip"
+    assert result.outcomes == (phrases.SkipReason.BINARY,), (
+        "report exactly one binary skip"
+    )
     assert "README" not in repr(result.outcomes), "never carry a tracked path"
 
 
@@ -338,7 +337,7 @@ def test_tracked_files_requires_a_git_repository(tmp_path: pathlib.Path) -> None
     outside.mkdir()
 
     with pytest.raises(subprocess.CalledProcessError):
-        phrases.tracked_files(outside)
+        phrases_files.tracked_files(outside)
 
 
 def test_tracked_files_omits_a_submodule_gitlink(tmp_path: pathlib.Path) -> None:
@@ -356,7 +355,7 @@ def test_tracked_files_omits_a_submodule_gitlink(tmp_path: pathlib.Path) -> None
     )
     (repository / "sub").mkdir()
 
-    tracked = phrases.tracked_files(repository)
+    tracked = phrases_files.tracked_files(repository)
 
     assert pathlib.Path("README.md") in tracked
     assert pathlib.Path("sub") not in tracked, "a gitlink was enumerated as a file"
@@ -374,6 +373,6 @@ def test_tracked_file_replaced_by_a_directory_fails_closed(
     (repository / "README.md").mkdir()
 
     with pytest.raises(phrases.PhraseScanError) as error:
-        phrases.find_phrases(repository, phrases.load_policy(repository))
+        _find_phrases(repository)
 
     assert error.value.path == pathlib.Path("README.md")

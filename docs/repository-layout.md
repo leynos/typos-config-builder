@@ -9,8 +9,14 @@ This reference identifies the small set of paths that define the builder.
   offline paths and the `refresh` entry point, and imports `remote` in that one
   direction only.
 - `typos_config_builder/phrases.py` enforces the shared phrase corrections
-  that Typos cannot express. `typos_config_builder/phrase_scan.py` logs the
-  fixed, path-free scan outcomes. `typos_config_builder/phrases_files.py` owns
+  that Typos cannot express. It owns the policy, the domain skip and failure
+  reasons, and the `TrackedTextSource` port, and `find_phrases` queries that
+  port without touching the filesystem. `phrase_matching.py` is the pure
+  matcher beneath it. `phrase_source.py` is the one adapter that enumerates
+  Git-tracked paths and maps each filesystem outcome to a domain reason.
+  `phrase_scan.py` classifies and reads one path, and
+  `phrase_scan_reporting.py` publishes the fixed, path-free diagnostics and
+  metrics at the command boundary. `typos_config_builder/phrases_files.py` owns
   tracked-file selection (the Git listing, policy-file and escape checks) and
   bounded phrase reads; it is the only module that shells out to Git.
   `phrases_files.read_tracked_text` is the sole production caller of the
@@ -28,6 +34,8 @@ This reference identifies the small set of paths that define the builder.
   `test_policy.py`, `test_patterns.py`, `test_phrases.py`,
   `test_phrases_files.py` and `test_phrases_file_selection.py` for tracked-file
   selection, `test_phrase_scan_diagnostics.py` for path-free diagnostics,
+  `test_phrase_scan_reporting.py` for the label mapping,
+  `test_phrase_path_properties.py` for generated path-containment cases,
   `test_phrase_file_open_windows.py` and
   `test_phrase_file_open_windows_native.py` for portable handle and API tests,
   and `test_phrase_file_open_windows_integration.py` for native Windows opens

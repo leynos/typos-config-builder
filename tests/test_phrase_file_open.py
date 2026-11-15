@@ -125,7 +125,7 @@ def test_directory_moved_out_of_the_worktree_is_refused(
         mock.patch.object(os, "open", _opening_after_move(repository, replace=replace)),
         mock.patch.object(os, "close", _record_close(repository)),
         mock.patch.object(os, "read", record_read),
-        pytest.raises(phrases_files.PhraseScanError) as error,
+        pytest.raises(phrases_files.TrackedFileError) as error,
     ):
         phrases_files.read_tracked_text(repository.resolved_root, RELATIVE)
 

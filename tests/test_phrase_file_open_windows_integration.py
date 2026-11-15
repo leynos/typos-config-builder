@@ -189,7 +189,7 @@ def test_native_windows_directory_replacement_fails_before_read(
     monkeypatch.setattr(phrases_files, "open_tracked_file", replace_before_open)
     monkeypatch.setattr(os, "read", observe_read)
 
-    with pytest.raises(phrases_files.PhraseScanError):
+    with pytest.raises(phrases_files.TrackedFileError):
         phrase_scan.read_scannable_text(candidate, relative, root)
 
     assert not read_calls, "fail before reading from a directory replacement"

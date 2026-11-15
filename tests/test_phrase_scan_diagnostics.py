@@ -18,8 +18,8 @@ from conftest import build_repository, cache_text
 from hypothesis import example, given
 from hypothesis import strategies as st
 
-from typos_config_builder import phrase_scan, phrases, phrases_files
-from typos_config_builder.phrase_scan_results import ReadOutcome, ScanFailure
+from typos_config_builder import phrase_scan, phrase_source, phrases, phrases_files
+from typos_config_builder.phrase_scan_results import ReadOutcome, ScanEligibility
 
 
 @pytest.fixture
@@ -27,6 +27,13 @@ def quiet_records(caplog: pytest.LogCaptureFixture) -> pytest.LogCaptureFixture:
     """Capture every diagnostic the package could emit during a query."""
     caplog.set_level(logging.DEBUG, logger="typos_config_builder")
     return caplog
+
+
+def _find_phrases(
+    repository: pathlib.Path, policy: phrases.PhrasePolicy
+) -> phrases.PhraseScanResult:
+    """Run the domain phrase query through the Git worktree adapter."""
+    return phrases.find_phrases(phrase_source.RepositoryTextSource(repository), policy)
 
 
 @pytest.mark.skipif(
@@ -63,37 +70,35 @@ def test_file_layer_decisions_are_silent(
         assert not phrases_files.is_scannable(oversized, root, max_file_size_bytes=8), (
             "skip oversized files"
         )
+        assert phrases_files.scan_eligibility(link, root) is ScanEligibility.SYMLINK, (
+            "classify symbolic links"
+        )
         assert (
-            phrases_files.scan_eligibility(link, root).decision == "skipped-symlink"
-        ), "classify symbolic links"
-        assert (
-            phrases_files.scan_eligibility(fifo, root).decision == "skipped-non-regular"
+            phrases_files.scan_eligibility(fifo, root) is ScanEligibility.NON_REGULAR
         ), "classify non-regular entries"
         assert (
-            phrases_files.scan_eligibility(
-                oversized, root, max_file_size_bytes=8
-            ).decision
-            == "skipped-oversized"
+            phrases_files.scan_eligibility(oversized, root, max_file_size_bytes=8)
+            is ScanEligibility.OVERSIZED
         ), "classify oversized files"
 
         reader = io.BytesIO(b"x" * 9)
         monkeypatch.setattr(os, "read", lambda _fd, size: reader.read(size))
         too_large = phrases_files.read_tracked_text(root, pathlib.Path("README.md"))
         assert too_large.text is None, "discard over-limit bytes"
-        assert too_large.outcome.decision == "skipped-oversized", "record size skip"
+        assert too_large.outcome is ReadOutcome.OVERSIZED, "record size skip"
 
         reader = io.BytesIO(b"\xff")
         monkeypatch.setattr(os, "read", lambda _fd, size: reader.read(size))
         binary = phrases_files.read_tracked_text(root, pathlib.Path("README.md"))
         assert binary.text is None, "discard binary content"
-        assert binary.outcome.decision == "skipped-binary", "record binary skip"
+        assert binary.outcome is ReadOutcome.BINARY, "record binary skip"
 
         def fail_read(*_args: object, **_kwargs: object) -> typ.Never:
             """Simulate a tracked input that cannot be read."""
             raise PermissionError
 
         monkeypatch.setattr(os, "read", fail_read)
-        with pytest.raises(phrases_files.PhraseScanError):
+        with pytest.raises(phrases_files.TrackedFileError):
             phrases_files.read_tracked_text(root, pathlib.Path("README.md"))
 
     assert not caplog.records, "file-layer helpers must not emit diagnostics"
@@ -132,16 +137,16 @@ def test_phrase_scan_returns_fixed_outcomes_without_logging(
     os.mkfifo(repository / "pipe.md")
     monkeypatch.setattr(phrases_files, "MAX_FILE_SIZE_BYTES", 12)
 
-    result = phrases.find_phrases(repository, phrases.load_policy(repository))
+    result = _find_phrases(repository, phrases.load_policy(repository))
 
     assert not result.findings, "skip ineligible or binary tracked inputs"
-    assert [(outcome.decision, outcome.error_class) for outcome in result.outcomes] == [
-        ("skipped-symlink", "symlink"),
-        ("skipped-binary", "not-utf-8"),
-        ("skipped-outside-worktree", "containment"),
-        ("skipped-oversized", "size-limit"),
-        ("skipped-non-regular", "non-regular"),
-    ], "return each fixed eligibility and read outcome in tracked-path order"
+    assert result.outcomes == (
+        phrases.SkipReason.SYMLINK,
+        phrases.SkipReason.BINARY,
+        phrases.SkipReason.OUTSIDE_WORKTREE,
+        phrases.SkipReason.OVERSIZED,
+        phrases.SkipReason.NON_REGULAR,
+    ), "return each domain skip reason in tracked-path order"
     assert not quiet_records.records, "the phrase query must publish nothing"
 
 
@@ -158,12 +163,11 @@ def test_directory_replacement_fails_with_a_fixed_outcome(
     (repository / "README.md").mkdir()
 
     with pytest.raises(phrases.PhraseScanError) as error:
-        phrases.find_phrases(repository, phrases.load_policy(repository))
+        _find_phrases(repository, phrases.load_policy(repository))
 
-    assert error.value.outcome is ScanFailure.DIRECTORY_REPLACEMENT, (
+    assert error.value.reason is phrases.ScanFailureReason.DIRECTORY_REPLACEMENT, (
         "classify a directory replacement as a directory failure"
     )
-    assert error.value.outcome.decision == "failed-directory-replacement"
     assert not quiet_records.records, "the phrase query must publish nothing"
 
 
@@ -206,7 +210,7 @@ def test_parent_symlink_swap_cannot_redirect_the_read(
     monkeypatch.setattr(phrases_files, "open_tracked_file", swap_parent_then_open)
     monkeypatch.setattr(os, "read", observe_read)
 
-    with pytest.raises(phrases.PhraseScanError):
+    with pytest.raises(phrases_files.TrackedFileError):
         phrase_scan.read_scannable_text(root / relative, relative, root)
 
     assert not read_calls, "reject the swapped parent before reading file content"
@@ -244,10 +248,11 @@ def test_read_failure_carries_the_read_category(
     monkeypatch.setattr(os, "read", fail_read)
 
     with pytest.raises(phrases.PhraseScanError) as error:
-        phrases.find_phrases(repository, policy)
+        _find_phrases(repository, policy)
 
-    assert error.value.outcome is ScanFailure.READ, "classify the failure as a read"
-    assert error.value.outcome.decision == "failed-read"
+    assert error.value.reason is phrases.ScanFailureReason.READ, (
+        "classify the failure as a read"
+    )
     assert not quiet_records.records, "the phrase query must publish nothing"
 
 
@@ -284,10 +289,10 @@ def test_read_side_oversize_is_reported_as_a_skip(
     monkeypatch.setattr(phrases_files, "open_tracked_file", record_open_file)
     monkeypatch.setattr(os, "read", growing_read)
 
-    result = phrases.find_phrases(repository, policy)
+    result = _find_phrases(repository, policy)
 
     assert not result.findings, "skip an input that grows beyond its checked size"
-    assert result.outcomes == (ReadOutcome.OVERSIZED,), (
+    assert result.outcomes == (phrases.SkipReason.OVERSIZED,), (
         "report the growth race as one oversized outcome"
     )
     assert not quiet_records.records, "the phrase query must publish nothing"
@@ -334,8 +339,8 @@ def test_bounded_read_obeys_nonnegative_limits(
         "consume no more than one byte past the limit"
     )
     assert (result.text is None) is is_oversized, "accept only in-bound payloads"
-    assert result.outcome.decision == (
-        "skipped-oversized" if is_oversized else "scanned-text"
+    assert result.outcome is (
+        ReadOutcome.OVERSIZED if is_oversized else ReadOutcome.TEXT
     ), "report the expected bounded-read outcome"
     if result.text is not None:
         assert result.text == "x" * payload_size, "preserve accepted UTF-8 text"
