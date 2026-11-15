@@ -246,6 +246,23 @@ another Python would miss its baseline rather than compare against the wrong
 one; the contract turns that silent restart into a failure. It uses
 `packaging`, a development dependency.
 
+### Windows phrase-input probe
+
+`ci.yml`'s `windows-phrase-inputs` job is the only hosted proof of the native
+Windows opener, because the Linux suite exercises that adapter through native
+API doubles. It runs on `windows-latest` with a ten-minute timeout and read-only
+`contents` permission, checks out without persisting credentials, and sets up
+Python 3.14 and uv. It then runs `uv sync --locked --group dev` and
+`uv run --locked pytest -q tests/test_phrase_file_open_windows_integration.py`
+against regular files, a nested file, a symbolic link, and a directory
+junction. A failure of that job blocks the change.
+
+The probe is deliberately narrow: it covers a platform case rather than running
+the coverage-owned suite again, so it is outside
+`tests/test_suite_runs_once.py` only through the exact-command exemption
+described under coverage publication. Widening the command changes what that
+contract exempts.
+
 ### Workflow contracts
 
 `make test-workflow-contracts`, which `ci.yml` runs as its own step, holds the
