@@ -9,7 +9,6 @@ skipped, and unreadable or vanished tracked files fail closed.
 from __future__ import annotations
 
 import io
-import logging
 import os
 import pathlib
 import shutil
@@ -26,6 +25,7 @@ from conftest import (
 )
 
 from typos_config_builder import phrases, phrases_files
+from typos_config_builder.phrase_scan_results import ReadOutcome
 
 # Placeholder commit identifier for a submodule gitlink. Git records a
 # gitlink without resolving the object, so the commit need not exist.
@@ -54,9 +54,9 @@ def test_tracked_symlinks_are_skipped(tmp_path: pathlib.Path) -> None:
     (repository / "external.txt").symlink_to(external)
     _git(repository, "add", "external.txt")
 
-    assert not phrases.find_phrases(repository, phrases.load_policy(repository)), (
-        "the scan followed a tracked symlink out of the repository"
-    )
+    assert not phrases.find_phrases(
+        repository, phrases.load_policy(repository)
+    ).findings, "the scan followed a tracked symlink out of the repository"
 
 
 @pytest.mark.skipif(not pathlib.Path("/dev/zero").exists(), reason="requires /dev/zero")
@@ -69,7 +69,9 @@ def test_tracked_symlink_to_unbounded_device_is_skipped(
     link.symlink_to("/dev/zero")
     _git(repository, "add", "README.md")
 
-    findings = phrases.find_phrases(repository, phrases.load_policy(repository))
+    findings = phrases.find_phrases(
+        repository, phrases.load_policy(repository)
+    ).findings
     assert not findings, "skip a symlink to /dev/zero"
 
 
@@ -109,9 +111,9 @@ def test_tracked_path_behind_a_symlinked_parent_is_skipped(
     shutil.rmtree(repository / "docs")
     (repository / "docs").symlink_to(outside, target_is_directory=True)
 
-    assert not phrases.find_phrases(repository, phrases.load_policy(repository)), (
-        "the scan read a file outside the repository through a symlinked parent"
-    )
+    assert not phrases.find_phrases(
+        repository, phrases.load_policy(repository)
+    ).findings, "the scan read a file outside the repository through a symlinked parent"
 
 
 def test_missing_external_target_behind_symlinked_parent_is_skipped(
@@ -126,7 +128,9 @@ def test_missing_external_target_behind_symlinked_parent_is_skipped(
     outside = tmp_path / "outside"
     outside.mkdir()
     (repository / "docs").symlink_to(outside, target_is_directory=True)
-    findings = phrases.find_phrases(repository, phrases.load_policy(repository))
+    findings = phrases.find_phrases(
+        repository, phrases.load_policy(repository)
+    ).findings
     assert not findings, "skip an external target behind a symlink"
 
 
@@ -142,9 +146,9 @@ def test_policy_documents_are_not_scanned(tmp_path: pathlib.Path) -> None:
         },
     )
 
-    assert not phrases.find_phrases(repository, phrases.load_policy(repository)), (
-        "a policy document was reported as a finding"
-    )
+    assert not phrases.find_phrases(
+        repository, phrases.load_policy(repository)
+    ).findings, "a policy document was reported as a finding"
 
 
 def test_tracked_file_removed_after_enumeration_fails_closed(
@@ -188,9 +192,9 @@ def test_tracked_submodule_directory_is_skipped(tmp_path: pathlib.Path) -> None:
         f"Prefer {PROHIBITED}.\n", encoding="utf-8"
     )
 
-    assert not phrases.find_phrases(repository, phrases.load_policy(repository)), (
-        "the submodule's untracked content was scanned"
-    )
+    assert not phrases.find_phrases(
+        repository, phrases.load_policy(repository)
+    ).findings, "the submodule's untracked content was scanned"
 
 
 def test_undecodable_tracked_file_is_skipped_as_binary(
@@ -203,9 +207,9 @@ def test_undecodable_tracked_file_is_skipped_as_binary(
     )
     (repository / "README.md").write_bytes(BINARY_BYTES)
 
-    assert not phrases.find_phrases(repository, phrases.load_policy(repository)), (
-        "binary tracked content produced a finding"
-    )
+    assert not phrases.find_phrases(
+        repository, phrases.load_policy(repository)
+    ).findings, "binary tracked content produced a finding"
 
 
 def test_text_beside_a_binary_tracked_file_is_still_scanned(
@@ -222,7 +226,9 @@ def test_text_beside_a_binary_tracked_file_is_still_scanned(
     )
     (repository / "README.md").write_bytes(BINARY_BYTES)
 
-    findings = phrases.find_phrases(repository, phrases.load_policy(repository))
+    findings = phrases.find_phrases(
+        repository, phrases.load_policy(repository)
+    ).findings
 
     assert [finding.path for finding in findings] == [pathlib.Path("NOTES.md")]
 
@@ -239,7 +245,9 @@ def test_oversized_tracked_text_is_skipped(
         },
     )
     monkeypatch.setattr(phrases_files, "MAX_FILE_SIZE_BYTES", 8)
-    findings = phrases.find_phrases(repository, phrases.load_policy(repository))
+    findings = phrases.find_phrases(
+        repository, phrases.load_policy(repository)
+    ).findings
     assert not findings, "skip oversized tracked text"
 
 
@@ -298,7 +306,9 @@ def test_ordinary_utf8_text_still_reports_phrase_findings(
         },
     )
 
-    findings = phrases.find_phrases(repository, phrases.load_policy(repository))
+    findings = phrases.find_phrases(
+        repository, phrases.load_policy(repository)
+    ).findings
 
     expected = (
         phrases.PhraseFinding(pathlib.Path("README.md"), 2, 8, PROHIBITED, CORRECTION),
@@ -306,28 +316,20 @@ def test_ordinary_utf8_text_still_reports_phrase_findings(
     assert findings == expected, "preserve ordinary UTF-8 phrase findings"
 
 
-def test_skipping_binary_content_logs_one_bounded_record(
-    tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture
+def test_skipping_binary_content_reports_one_bounded_outcome(
+    tmp_path: pathlib.Path,
 ) -> None:
-    """The skip is visible as a bounded decision that carries no file content."""
+    """The skip is visible as one fixed outcome that names no tracked file."""
     repository = build_repository(
         tmp_path,
         {".typos-oxendict-base.toml": cache_text(), "README.md": "Initially UTF-8.\n"},
     )
     (repository / "README.md").write_bytes(BINARY_BYTES)
 
-    with caplog.at_level(logging.DEBUG, logger="typos_config_builder"):
-        phrases.find_phrases(repository, phrases.load_policy(repository))
+    result = phrases.find_phrases(repository, phrases.load_policy(repository))
 
-    skips = [
-        record
-        for record in caplog.records
-        if getattr(record, "operation", None) == "phrase-scan"
-    ]
-    assert len(skips) == 1
-    assert skips[0].levelno in {logging.DEBUG, logging.INFO}
-    assert getattr(skips[0], "decision", None) == "skipped-binary"
-    assert "README" not in skips[0].getMessage()
+    assert result.outcomes == (ReadOutcome.BINARY,), "report exactly one binary skip"
+    assert "README" not in repr(result.outcomes), "never carry a tracked path"
 
 
 def test_tracked_files_requires_a_git_repository(tmp_path: pathlib.Path) -> None:

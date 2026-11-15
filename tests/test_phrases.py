@@ -86,7 +86,9 @@ def test_findings_report_exact_location_and_original_case(
         },
     )
 
-    findings = phrases.find_phrases(repository, phrases.load_policy(repository))
+    findings = phrases.find_phrases(
+        repository, phrases.load_policy(repository)
+    ).findings
 
     assert [
         (str(item.path), item.line, item.column, item.phrase, item.correction)
@@ -109,7 +111,9 @@ def test_boundaries_exclude_adjacent_word_characters(tmp_path: pathlib.Path) -> 
         },
     )
 
-    findings = phrases.find_phrases(repository, phrases.load_policy(repository))
+    findings = phrases.find_phrases(
+        repository, phrases.load_policy(repository)
+    ).findings
 
     assert [(item.line, item.column) for item in findings] == [(3, 1)]
 
@@ -130,7 +134,9 @@ def test_ignore_patterns_mask_inline_code_and_fenced_blocks(
         },
     )
 
-    findings = phrases.find_phrases(repository, phrases.load_policy(repository))
+    findings = phrases.find_phrases(
+        repository, phrases.load_policy(repository)
+    ).findings
 
     assert [(item.line, item.column) for item in findings] == [(7, 6)]
 
@@ -154,7 +160,9 @@ def test_excluded_globs_apply_in_normalized_order(tmp_path: pathlib.Path) -> Non
         },
     )
 
-    findings = phrases.find_phrases(repository, phrases.load_policy(repository))
+    findings = phrases.find_phrases(
+        repository, phrases.load_policy(repository)
+    ).findings
 
     assert [str(item.path) for item in findings] == ["notes.txt"]
 

@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import dataclasses as dc
 import enum
+import typing as typ
+
+if typ.TYPE_CHECKING:
+    import collections.abc as cabc
 
 
 class ScanEligibility(enum.Enum):
@@ -30,18 +34,24 @@ class ScanEligibility(enum.Enum):
         Fixed phrase-scan log category for this result.
     error_class
         Fixed reason label paired with the category.
+    metric_reason
+        Fixed metric label for a skipped path, or ``None`` when eligible.
     is_eligible
         Whether the phrase scan may read this path.
     fails_scan
         Whether this result must abort the phrase scan.
     """
 
-    ELIGIBLE = ("eligible", "")
-    SYMLINK = ("skipped-symlink", "symlink")
-    OUTSIDE_WORKTREE = ("skipped-outside-worktree", "containment")
-    NON_REGULAR = ("skipped-non-regular", "non-regular")
-    OVERSIZED = ("skipped-oversized", "size-limit")
-    DIRECTORY_REPLACEMENT = ("failed-directory-replacement", "directory")
+    ELIGIBLE = ("eligible", "", None)
+    SYMLINK = ("skipped-symlink", "symlink", "symlink")
+    OUTSIDE_WORKTREE = ("skipped-outside-worktree", "containment", "outside-worktree")
+    NON_REGULAR = ("skipped-non-regular", "non-regular", "non-regular")
+    OVERSIZED = ("skipped-oversized", "size-limit", "oversized")
+    DIRECTORY_REPLACEMENT = (
+        "failed-directory-replacement",
+        "directory",
+        "directory-replacement",
+    )
 
     @property
     def decision(self) -> str:
@@ -52,6 +62,11 @@ class ScanEligibility(enum.Enum):
     def error_class(self) -> str:
         """The fixed reason label for this eligibility result."""
         return self.value[1]
+
+    @property
+    def metric_reason(self) -> str | None:
+        """The fixed metric label for a skipped path, or ``None``."""
+        return self.value[2]
 
     @property
     def is_eligible(self) -> bool:
@@ -84,12 +99,14 @@ class ReadOutcome(enum.Enum):
         Fixed phrase-scan log category for this result.
     error_class
         Fixed reason label paired with the category.
+    metric_reason
+        Fixed metric label for a skipped input, or ``None`` when text was read.
     """
 
-    TEXT = ("scanned-text", "utf-8")
-    OVERSIZED = ("skipped-oversized", "size-limit")
-    BINARY = ("skipped-binary", "not-utf-8")
-    NON_REGULAR = ("skipped-non-regular", "non-regular")
+    TEXT = ("scanned-text", "utf-8", None)
+    OVERSIZED = ("skipped-oversized", "size-limit", "oversized")
+    BINARY = ("skipped-binary", "not-utf-8", "binary")
+    NON_REGULAR = ("skipped-non-regular", "non-regular", "non-regular")
 
     @property
     def decision(self) -> str:
@@ -100,6 +117,85 @@ class ReadOutcome(enum.Enum):
     def error_class(self) -> str:
         """The fixed reason label for this read result."""
         return self.value[1]
+
+    @property
+    def metric_reason(self) -> str | None:
+        """The fixed metric label for a skipped input, or ``None``."""
+        return self.value[2]
+
+
+class ScanFailure(enum.Enum):
+    """Describe a fail-closed phrase-scan outcome.
+
+    Members
+    -------
+    METADATA
+        The tracked path's filesystem metadata could not be read.
+    READ
+        An eligible tracked file could not be opened or read.
+    DIRECTORY_REPLACEMENT
+        A directory was found where Git enumerated a file.
+
+    Attributes
+    ----------
+    decision
+        Fixed phrase-scan log category for this failure.
+    error_class
+        Fixed reason label paired with the category.
+    metric_reason
+        Fixed metric label for this failure.
+    """
+
+    METADATA = ("failed-metadata", "file-system", "metadata-failure")
+    READ = ("failed-read", "file-system", "read-failure")
+    DIRECTORY_REPLACEMENT = (
+        "failed-directory-replacement",
+        "directory",
+        "directory-replacement",
+    )
+
+    @property
+    def decision(self) -> str:
+        """The fixed log category for this failure."""
+        return self.value[0]
+
+    @property
+    def error_class(self) -> str:
+        """The fixed reason label for this failure."""
+        return self.value[1]
+
+    @property
+    def metric_reason(self) -> str:
+        """The fixed metric label for this failure."""
+        return self.value[2]
+
+
+#: Every fixed outcome the phrase boundary can report to the command layer.
+ScanOutcome = ScanEligibility | ReadOutcome | ScanFailure
+
+
+@dc.dataclass(frozen=True, slots=True)
+class ScannableText:
+    """Carry decoded text or a fixed skip outcome from the read boundary.
+
+    Exactly one attribute is populated: decoded text when the path was read,
+    or the fixed outcome explaining why no text was produced.
+
+    Attributes
+    ----------
+    text
+        Decoded UTF-8 text when the tracked path was read; otherwise ``None``.
+    outcome
+        The fixed skip outcome when no text was read; otherwise ``None``.
+
+    Examples
+    --------
+    >>> ScannableText(None, ReadOutcome.BINARY).outcome.decision
+    'skipped-binary'
+    """
+
+    text: str | None
+    outcome: ScanOutcome | None
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -122,3 +218,34 @@ class TrackedTextRead:
 
     text: str | None
     outcome: ReadOutcome
+
+
+def metric_counts(outcomes: cabc.Iterable[ScanOutcome]) -> dict[str, int]:
+    """Count outcomes by their fixed metric label.
+
+    Only outcomes that name a skip or a failure contribute a label, so a
+    successful read never inflates the skipped-input counter.
+
+    Parameters
+    ----------
+    outcomes
+        Fixed outcomes collected by a phrase scan.
+
+    Returns
+    -------
+    dict[str, int]
+        Count per fixed metric label, in first-seen order. Labels are stable
+        and carry no path, content, or raw error text.
+
+    Examples
+    --------
+    >>> metric_counts((ReadOutcome.BINARY, ReadOutcome.BINARY))
+    {'binary': 2}
+    """
+    counts: dict[str, int] = {}
+    for outcome in outcomes:
+        reason = outcome.metric_reason
+        if reason is None:
+            continue
+        counts[reason] = counts.get(reason, 0) + 1
+    return counts

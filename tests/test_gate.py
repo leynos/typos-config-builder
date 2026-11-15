@@ -14,7 +14,7 @@ import subprocess  # ruff: ignore[suspicious-subprocess-import] - only a fixture
 import pytest
 from conftest import CORRECTION, PROHIBITED, FakeRunner, build_repository
 
-from typos_config_builder import cli, gate
+from typos_config_builder import cli, gate, phrases
 
 # Spliced so this file never contains a plain-British form that the
 # repository's own gate would report.
@@ -235,3 +235,52 @@ def test_gate_withholds_a_symlink_leaving_the_repository(
     argv = runner.calls[0].argv
     assert "README.md" in argv
     assert "external.md" not in argv, "Typos was pointed outside the worktree"
+
+
+def test_gate_publishes_skip_metrics_without_naming_paths(
+    tmp_path: pathlib.Path,
+    authority: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The gate publishes a skip as one fixed counter at its command boundary."""
+    repository = build_repository(
+        tmp_path,
+        {"README.md": "Initially UTF-8.\n", "notes.txt": "Plain notes.\n"},
+    )
+    (repository / "README.md").write_bytes(b"\xff\xfe\x00binary")
+
+    gate.gate(repository, gate.GateOptions(source=str(authority)), runner=FakeRunner(0))
+
+    err_lines = [
+        line
+        for line in capsys.readouterr().err.splitlines()
+        if line.startswith("metric ")
+    ]
+    assert err_lines == ["metric phrase_scan_files_skipped_total{reason=binary}=1"], (
+        "count the skipped input without naming it"
+    )
+
+
+def test_gate_publishes_a_failure_metric_before_re_raising(
+    tmp_path: pathlib.Path,
+    authority: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A fail-closed phrase scan is counted before the gate reports it."""
+    repository = build_repository(tmp_path, {"README.md": "Readable once.\n"})
+    (repository / "README.md").unlink()
+    (repository / "README.md").mkdir()
+
+    with pytest.raises(phrases.PhraseScanError):
+        gate.gate(
+            repository, gate.GateOptions(source=str(authority)), runner=FakeRunner(0)
+        )
+
+    err_lines = [
+        line
+        for line in capsys.readouterr().err.splitlines()
+        if line.startswith("metric ")
+    ]
+    assert err_lines == [
+        "metric phrase_scan_files_failed_total{reason=directory-replacement}=1"
+    ], "count the failure under its fixed reason"

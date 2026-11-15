@@ -33,6 +33,8 @@ if typ.TYPE_CHECKING:
     import collections.abc as cabc
     import pathlib
 
+    from typos_config_builder.phrase_scan_results import ScanOutcome
+
 
 # Tracked-file selection lives in :mod:`typos_config_builder.phrases_files`,
 # and is re-exported here so callers keep one import site for the phrase gate.
@@ -41,6 +43,7 @@ __all__ = [
     "PhraseFinding",
     "PhrasePolicy",
     "PhraseScanError",
+    "PhraseScanResult",
     "find_phrases",
     "load_policy",
     "mask",
@@ -74,6 +77,25 @@ class PhraseFinding:
     column: int
     phrase: str
     correction: str
+
+
+@dc.dataclass(frozen=True, slots=True)
+class PhraseScanResult:
+    """Report findings and fixed outcomes from one phrase scan.
+
+    Attributes
+    ----------
+    findings
+        Prohibited phrases found in tracked text, ordered by tracked path,
+        then policy order, then position.
+    outcomes
+        Fixed skip and read outcomes in tracked-path order, for the command
+        layer to publish as diagnostics and metrics. A successful read
+        contributes no outcome.
+    """
+
+    findings: tuple[PhraseFinding, ...]
+    outcomes: tuple[ScanOutcome, ...]
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -286,9 +308,7 @@ def scan_text(
     return _Scanner.from_policy(policy).scan(path, text)
 
 
-def find_phrases(
-    repository: pathlib.Path, policy: PhrasePolicy
-) -> tuple[PhraseFinding, ...]:
+def find_phrases(repository: pathlib.Path, policy: PhrasePolicy) -> PhraseScanResult:
     """Find prohibited phrases across a repository's tracked text.
 
     Policy documents are never scanned, and excluded paths are skipped using
@@ -299,6 +319,9 @@ def find_phrases(
     Any other tracked path that cannot be read, a directory left in place of a
     file among them, fails the scan rather than being skipped.
 
+    The scan is a query: it returns findings and typed outcomes but publishes
+    no diagnostics, so the command layer owns logging and metrics.
+
     Parameters
     ----------
     repository
@@ -308,8 +331,9 @@ def find_phrases(
 
     Returns
     -------
-    tuple[PhraseFinding, ...]
-        Findings ordered by tracked path, then policy order, then position.
+    PhraseScanResult
+        Findings ordered by tracked path, then policy order, then position,
+        together with the fixed outcomes of skipped or unreadable inputs.
 
     Raises
     ------
@@ -325,18 +349,21 @@ def find_phrases(
     Examples
     --------
     >>> repository = pathlib.Path(".")
-    >>> find_phrases(repository, load_policy(repository))  # doctest: +SKIP
+    >>> find_phrases(repository, load_policy(repository)).findings  # doctest: +SKIP
     ()
     """
     scanner = _Scanner.from_policy(policy)
     exclusions = pathspec.GitIgnoreSpec.from_lines(policy.excluded_files)
     root = repository.resolve()
     findings: list[PhraseFinding] = []
+    outcomes: list[ScanOutcome] = []
     for relative in tracked_files(repository):
         if relative in POLICY_PATHS or exclusions.match_file(relative.as_posix()):
             continue
         candidate = repository / relative
-        tracked_text = phrase_scan.read_scannable_text(candidate, relative, root)
-        if tracked_text is not None:
-            findings.extend(scanner.scan(relative, tracked_text))
-    return tuple(findings)
+        scan = phrase_scan.read_scannable_text(candidate, relative, root)
+        if scan.outcome is not None:
+            outcomes.append(scan.outcome)
+        if scan.text is not None:
+            findings.extend(scanner.scan(relative, scan.text))
+    return PhraseScanResult(tuple(findings), tuple(outcomes))

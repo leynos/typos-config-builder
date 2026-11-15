@@ -9,8 +9,9 @@ Content that is not valid UTF-8 is binary as far as a phrase check is
 concerned, so it is skipped. Selection still fails closed on a read error,
 which means the worktree changed under the scan or an entry cannot be opened,
 because a silent skip there hides exactly the files most likely to have
-drifted. The phrase orchestration layer logs fixed, path-free outcomes returned
-by these helpers.
+drifted. These helpers return fixed outcomes;
+:mod:`typos_config_builder.phrase_scan_reporting` publishes them at the command
+boundary.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from typos_config_builder.phrase_file_open import open_tracked_file
 from typos_config_builder.phrase_scan_results import (
     ReadOutcome,
     ScanEligibility,
+    ScanFailure,
     TrackedTextRead,
 )
 
@@ -58,21 +60,21 @@ MAX_FILE_SIZE_BYTES = 1024 * 1024
 class PhraseScanError(Exception):
     """Report that a tracked file could not be read.
 
+    The failure carries a fixed category so the command layer can publish a
+    path-free diagnostic without inspecting the exception message.
+
     Attributes
     ----------
     path
         Repository-relative path that could not be scanned.
+    outcome
+        Fixed failure category for diagnostics and metrics.
     """
 
-    def __init__(self, path: pathlib.Path) -> None:
-        """Record the tracked path that could not be scanned.
-
-        Parameters
-        ----------
-        path
-            Repository-relative path that could not be read.
-        """
+    def __init__(self, path: pathlib.Path, outcome: ScanFailure) -> None:
+        """Record the tracked path and the fixed failure category."""
         self.path = path
+        self.outcome = outcome
         super().__init__(f"tracked file could not be scanned: {path}")
 
 
@@ -227,8 +229,8 @@ def scan_eligibility(
     """Classify one tracked path without logging or opening its contents.
 
     :func:`is_scannable` adapts this result for Typos selection, which remains
-    uncapped. :func:`phrase_scan._scan_eligibility_for_path` consumes it for
-    path-free logging.
+    uncapped. :func:`phrase_scan._scan_eligibility_for_path` consumes it for a
+    fixed phrase-scan outcome.
 
     Parameters
     ----------
@@ -390,4 +392,4 @@ def read_tracked_text(root: pathlib.Path, relative: pathlib.Path) -> TrackedText
         finally:
             os.close(file_descriptor)
     except OSError as error:
-        raise PhraseScanError(relative) from error
+        raise PhraseScanError(relative, ScanFailure.READ) from error

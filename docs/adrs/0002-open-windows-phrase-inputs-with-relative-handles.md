@@ -99,8 +99,7 @@ platform-neutral dispatcher.
   phrase policy and content reading.
 - Linux tests use native API doubles. The CI workflow also runs the focused
   integration cases on Windows against regular files, a nested file, a symbolic
-  link, and a directory junction; the first result is pending until that
-  workflow runs.
+  link, and a directory junction. A failure of that job blocks the change.
 
 ## Outstanding decisions
 

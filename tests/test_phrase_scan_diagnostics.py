@@ -1,4 +1,9 @@
-"""Verify typed phrase-scan decisions and path-free orchestration logs."""
+"""Verify the phrase query returns fixed outcomes and publishes nothing.
+
+The scan is a query: it classifies every tracked input, reports fixed outcomes
+or a fixed failure, and leaves diagnostics and metrics to the command layer.
+These tests pin that boundary, including the absence of any log record.
+"""
 
 import io
 import logging
@@ -14,22 +19,14 @@ from hypothesis import example, given
 from hypothesis import strategies as st
 
 from typos_config_builder import phrase_scan, phrases, phrases_files
+from typos_config_builder.phrase_scan_results import ReadOutcome, ScanFailure
 
 
-def _phrase_scan_records(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
-    """Return only records emitted at the phrase-scan boundary."""
-    return [
-        record
-        for record in caplog.records
-        if getattr(record, "operation", None) == "phrase-scan"
-    ]
-
-
-def _assert_path_free(record: logging.LogRecord) -> None:
-    """Check that a diagnostic contains fixed text and no tracked input."""
-    assert record.getMessage() == "Phrase scan decision", "keep diagnostic text fixed"
-    assert not hasattr(record, "path"), "do not expose tracked paths"
-    assert not hasattr(record, "content"), "do not expose tracked contents"
+@pytest.fixture
+def quiet_records(caplog: pytest.LogCaptureFixture) -> pytest.LogCaptureFixture:
+    """Capture every diagnostic the package could emit during a query."""
+    caplog.set_level(logging.DEBUG, logger="typos_config_builder")
+    return caplog
 
 
 @pytest.mark.skipif(
@@ -106,12 +103,12 @@ def test_file_layer_decisions_are_silent(
     not hasattr(os, "mkfifo") or not pathlib.Path("/dev/zero").exists(),
     reason="requires FIFO and device support",
 )
-def test_orchestration_logs_fixed_path_free_eligibility_decisions(
+def test_phrase_scan_returns_fixed_outcomes_without_logging(
     tmp_path: pathlib.Path,
-    caplog: pytest.LogCaptureFixture,
+    quiet_records: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The phrase boundary logs fixed categories without tracked names."""
+    """The query reports fixed categories and never writes a diagnostic."""
     repository = build_repository(
         tmp_path,
         {
@@ -135,52 +132,39 @@ def test_orchestration_logs_fixed_path_free_eligibility_decisions(
     os.mkfifo(repository / "pipe.md")
     monkeypatch.setattr(phrases_files, "MAX_FILE_SIZE_BYTES", 12)
 
-    with caplog.at_level(logging.DEBUG, logger="typos_config_builder"):
-        findings = phrases.find_phrases(repository, phrases.load_policy(repository))
+    result = phrases.find_phrases(repository, phrases.load_policy(repository))
 
-    records = _phrase_scan_records(caplog)
-    assert not findings, "skip ineligible or binary tracked inputs"
-    assert [
-        (getattr(record, "decision", None), getattr(record, "error_class", None))
-        for record in records
-    ] == [
+    assert not result.findings, "skip ineligible or binary tracked inputs"
+    assert [(outcome.decision, outcome.error_class) for outcome in result.outcomes] == [
         ("skipped-symlink", "symlink"),
         ("skipped-binary", "not-utf-8"),
         ("skipped-outside-worktree", "containment"),
         ("skipped-oversized", "size-limit"),
         ("skipped-non-regular", "non-regular"),
-    ], "log each fixed eligibility and read outcome"
-    for record in records:
-        _assert_path_free(record)
+    ], "return each fixed eligibility and read outcome in tracked-path order"
+    assert not quiet_records.records, "the phrase query must publish nothing"
 
 
-def test_directory_replacement_logs_without_path_or_content(
+def test_directory_replacement_fails_with_a_fixed_outcome(
     tmp_path: pathlib.Path,
-    caplog: pytest.LogCaptureFixture,
+    quiet_records: pytest.LogCaptureFixture,
 ) -> None:
-    """Directory replacement fails closed with a fixed path-free diagnostic."""
+    """Directory replacement fails closed with the fixed directory category."""
     repository = build_repository(
         tmp_path,
         {".typos-oxendict-base.toml": cache_text(), "README.md": "Readable once.\n"},
     )
     (repository / "README.md").unlink()
     (repository / "README.md").mkdir()
-    policy = phrases.load_policy(repository)
 
-    with (
-        caplog.at_level(logging.DEBUG, logger="typos_config_builder"),
-        pytest.raises(phrases.PhraseScanError),
-    ):
-        phrases.find_phrases(repository, policy)
+    with pytest.raises(phrases.PhraseScanError) as error:
+        phrases.find_phrases(repository, phrases.load_policy(repository))
 
-    record = next(iter(_phrase_scan_records(caplog)))
-    assert getattr(record, "decision", None) == "failed-directory-replacement", (
-        "classify a directory replacement as a scan failure"
+    assert error.value.outcome is ScanFailure.DIRECTORY_REPLACEMENT, (
+        "classify a directory replacement as a directory failure"
     )
-    assert getattr(record, "error_class", None) == "directory", (
-        "use the fixed directory error label"
-    )
-    _assert_path_free(record)
+    assert error.value.outcome.decision == "failed-directory-replacement"
+    assert not quiet_records.records, "the phrase query must publish nothing"
 
 
 @pytest.mark.skipif(
@@ -228,12 +212,12 @@ def test_parent_symlink_swap_cannot_redirect_the_read(
     assert not read_calls, "reject the swapped parent before reading file content"
 
 
-def test_read_error_logs_without_path_or_content(
+def test_read_failure_carries_the_read_category(
     tmp_path: pathlib.Path,
-    caplog: pytest.LogCaptureFixture,
+    quiet_records: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Read failures remain fail-closed without exposing tracked input."""
+    """Read failures stay fail-closed and carry the fixed read category."""
     repository = build_repository(
         tmp_path,
         {".typos-oxendict-base.toml": cache_text(), "README.md": "Readable once.\n"},
@@ -258,28 +242,21 @@ def test_read_error_logs_without_path_or_content(
 
     monkeypatch.setattr(phrases_files, "open_tracked_file", record_open_file)
     monkeypatch.setattr(os, "read", fail_read)
-    with (
-        caplog.at_level(logging.DEBUG, logger="typos_config_builder"),
-        pytest.raises(phrases.PhraseScanError),
-    ):
+
+    with pytest.raises(phrases.PhraseScanError) as error:
         phrases.find_phrases(repository, policy)
 
-    record = next(iter(_phrase_scan_records(caplog)))
-    assert getattr(record, "decision", None) == "failed-read", (
-        "classify an unreadable tracked file as a scan failure"
-    )
-    assert getattr(record, "error_class", None) == "file-system", (
-        "use the fixed filesystem error label"
-    )
-    _assert_path_free(record)
+    assert error.value.outcome is ScanFailure.READ, "classify the failure as a read"
+    assert error.value.outcome.decision == "failed-read"
+    assert not quiet_records.records, "the phrase query must publish nothing"
 
 
-def test_read_side_oversize_logs_without_path_or_content(
+def test_read_side_oversize_is_reported_as_a_skip(
     tmp_path: pathlib.Path,
-    caplog: pytest.LogCaptureFixture,
+    quiet_records: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A file that grows after its metadata check is skipped and logged safely."""
+    """A file that grows after its metadata check is skipped, not failed."""
     repository = build_repository(
         tmp_path,
         {".typos-oxendict-base.toml": cache_text(), "README.md": "small\n"},
@@ -306,19 +283,14 @@ def test_read_side_oversize_logs_without_path_or_content(
 
     monkeypatch.setattr(phrases_files, "open_tracked_file", record_open_file)
     monkeypatch.setattr(os, "read", growing_read)
-    with caplog.at_level(logging.DEBUG, logger="typos_config_builder"):
-        findings = phrases.find_phrases(repository, policy)
 
-    records = _phrase_scan_records(caplog)
-    assert not findings, "skip an input that grows beyond its checked size"
-    assert len(records) == 1, "log one outcome for the oversized input"
-    assert getattr(records[0], "decision", None) == "skipped-oversized", (
-        "classify the growth race as oversized"
+    result = phrases.find_phrases(repository, policy)
+
+    assert not result.findings, "skip an input that grows beyond its checked size"
+    assert result.outcomes == (ReadOutcome.OVERSIZED,), (
+        "report the growth race as one oversized outcome"
     )
-    assert getattr(records[0], "error_class", None) == "size-limit", (
-        "use the fixed size-limit error label"
-    )
-    _assert_path_free(records[0])
+    assert not quiet_records.records, "the phrase query must publish nothing"
 
 
 @given(
