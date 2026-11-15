@@ -35,6 +35,7 @@ This reference identifies the small set of paths that define the builder.
   `test_phrases_files.py` and `test_phrases_file_selection.py` for tracked-file
   selection, `test_phrase_scan_diagnostics.py` for path-free diagnostics,
   `test_phrase_scan_reporting.py` for the label mapping,
+  `test_phrase_source.py` for the adapter's category translation,
   `test_phrase_path_properties.py` for generated path-containment cases,
   `test_phrase_file_open_windows.py` and
   `test_phrase_file_open_windows_native.py` for portable handle and API tests,
