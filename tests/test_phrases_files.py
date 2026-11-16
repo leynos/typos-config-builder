@@ -99,10 +99,18 @@ def test_device_is_not_scannable(tmp_path: pathlib.Path) -> None:
     assert not scannable, "skip device inputs"
 
 
-def test_tracked_path_behind_a_symlinked_parent_is_skipped(
-    tmp_path: pathlib.Path,
+@pytest.mark.parametrize(
+    "external_text", [None, f"{PROHIBITED}\n"], ids=["absent", "present"]
+)
+def test_external_target_behind_symlinked_parent_is_skipped(
+    tmp_path: pathlib.Path, external_text: str | None
 ) -> None:
-    """A symlinked parent directory cannot smuggle outside text into the scan."""
+    """An external target is skipped whether it is absent or readable.
+
+    The present case is the non-vacuous control: the external file holds the
+    prohibited phrase, so a read through the symlinked parent would report a
+    finding if containment were not checked first.
+    """
     repository = build_repository(
         tmp_path,
         {
@@ -112,29 +120,19 @@ def test_tracked_path_behind_a_symlinked_parent_is_skipped(
     )
     outside = tmp_path / "outside"
     outside.mkdir()
-    (outside / "guide.md").write_text(f"{PROHIBITED}\n", encoding="utf-8")
+    if external_text is not None:
+        (outside / "guide.md").write_text(external_text, encoding="utf-8")
     shutil.rmtree(repository / "docs")
     (repository / "docs").symlink_to(outside, target_is_directory=True)
 
-    assert not _find_phrases(repository).findings, (
+    result = _find_phrases(repository)
+
+    assert not result.findings, (
         "the scan read a file outside the repository through a symlinked parent"
     )
-
-
-def test_missing_external_target_behind_symlinked_parent_is_skipped(
-    tmp_path: pathlib.Path,
-) -> None:
-    """A missing external target is still outside the scan boundary."""
-    repository = build_repository(
-        tmp_path,
-        {".typos-oxendict-base.toml": cache_text(), "docs/guide.md": "Text.\n"},
+    assert result.outcomes == (phrases.SkipReason.OUTSIDE_WORKTREE,), (
+        "the symlinked parent must be reported as out of bounds, not silently ignored"
     )
-    shutil.rmtree(repository / "docs")
-    outside = tmp_path / "outside"
-    outside.mkdir()
-    (repository / "docs").symlink_to(outside, target_is_directory=True)
-    findings = _find_phrases(repository).findings
-    assert not findings, "skip an external target behind a symlink"
 
 
 def test_policy_documents_are_not_scanned(tmp_path: pathlib.Path) -> None:

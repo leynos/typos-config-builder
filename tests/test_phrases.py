@@ -237,13 +237,17 @@ def test_generated_ignored_spans_stay_masked(content: str) -> None:
 
 @dc.dataclass(frozen=True, slots=True)
 class _MappingSource:
-    """Yield a fixed sequence of tracked inputs without any filesystem access."""
+    """Report a fixed set of tracked inputs without any filesystem access."""
 
     records: tuple[phrases.TrackedInput, ...]
 
-    def tracked_inputs(self) -> cabc.Iterator[phrases.TrackedInput]:
-        """Yield each supplied record in order."""
-        return iter(self.records)
+    def tracked_paths(self) -> cabc.Iterator[pathlib.Path]:
+        """Yield each supplied record's path in order."""
+        return (record.path for record in self.records)
+
+    def read(self, relative: pathlib.Path) -> phrases.TrackedInput:
+        """Return the supplied record recorded for ``relative``."""
+        return next(record for record in self.records if record.path == relative)
 
 
 def test_find_phrases_queries_an_injected_tracked_text_source() -> None:

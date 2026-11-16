@@ -93,15 +93,15 @@ appending further behaviour once it approaches the limit. `gate.py` stands at
 399 lines, so new behaviour there belongs in a sibling module rather than
 another helper. Headroom is thin in `phrase_file_open_windows_native.py` at 397
 lines, `phrases_files.py` at 386 lines, and `remote.py` at 381 lines.
-`phrases.py` is at 305 lines, its pure matcher `phrase_matching.py` at 227, and
-the `phrase_source.py` adapter at 152. The `remote.py` module owns the HTTPS
-path, the bounded response read, the cache-identity checks, and the bounded
-refresh diagnostics. Prefer a new sibling module over growing any of these
-further. `GateOptions` groups the authority, cache policy, and scope because
-`gate` would otherwise exceed the repository's four-argument limit once the
-runner seam is included. The runner seam is a `typ.Protocol` naming only the
-subset of `subprocess.run` the gate uses, so a test records invocations without
-starting a process.
+`phrases.py` is at 324 lines, its pure matcher `phrase_matching.py` at 227, the
+`phrase_source.py` adapter at 172, and `phrase_scan_reporting.py` at 241. The
+`remote.py` module owns the HTTPS path, the bounded response read, the
+cache-identity checks, and the bounded refresh diagnostics. Prefer a new
+sibling module over growing any of these further. `GateOptions` groups the
+authority, cache policy, and scope because `gate` would otherwise exceed the
+repository's four-argument limit once the runner seam is included. The runner
+seam is a `typ.Protocol` naming only the subset of `subprocess.run` the gate
+uses, so a test records invocations without starting a process.
 
 ### Type-scoped rendering
 
@@ -130,16 +130,20 @@ a fixed read outcome. `scan_eligibility`, `read_tracked_text`, and
 `phrase_source.RepositoryTextSource` maps each filesystem outcome to a domain
 `SkipReason` or `ScanFailureReason`, raising `phrases.PhraseScanError` for a
 fail-closed read. `phrases.find_phrases` is then a pure query over the injected
-`TrackedTextSource` port: it neither reads a file nor logs.
-`phrase_scan_reporting.find_and_publish` remains the single publication point,
-used by `cli.check_phrases` and `gate`. Publication is one debug record per
-outcome, carrying the fixed decision and error class but never a tracked path
-or its content, plus `phrase_scan_files_skipped_total` and
+`TrackedTextSource` port: it neither reads a file nor logs. The port enumerates
+paths and reads text as two operations, so the query drops a policy document or
+an excluded path before asking for its text and such a path can never fail the
+scan. `phrase_scan_reporting.find_and_publish` remains the single publication
+point, used by `cli.check_phrases` and `gate`. Publication is one debug record
+per outcome, carrying the fixed decision and error class but never a tracked
+path or its content, plus `phrase_scan_files_skipped_total` and
 `phrase_scan_files_failed_total` counter lines labelled by fixed reason on
-standard error. A library caller can therefore run the scan without inheriting
-an observability side effect. Repositories legitimately track images, fonts,
-archives, and compiled artefacts, and failing on them would fail the gate in
-any such repository.
+standard error. Every publishing function accepts an optional `stream` writer,
+so a caller or a test can capture the counter lines without replacing the
+process's standard error. A library caller can therefore run the scan without
+inheriting an observability side effect. Repositories legitimately track
+images, fonts, archives, and compiled artefacts, and failing on them would fail
+the gate in any such repository.
 
 Regular tracked files larger than 1 MiB are also skipped by the phrase scan.
 `scan_eligibility` applies the limit when
@@ -175,13 +179,16 @@ requirements before reading from it. For the phrase scan, a tracked file
 replaced by a directory raises `PhraseScanError`; it is a worktree anomaly
 rather than policy. Typos selection skips such a path.
 
-The domain owns the port. `phrases.TrackedTextSource` defines the one method a
-source supplies, and `phrase_source.RepositoryTextSource` is the only worktree
-adapter. A new adapter must yield domain records (`TrackedText` or
-`SkippedInput`), must not expose a filesystem enum through `PhraseScanResult`,
-and must raise `phrases.PhraseScanError` rather than a filesystem error. Label
-mapping belongs only in `phrase_scan_reporting`, so a domain reason reaches a
-log or metric through its explicit mapping there.
+The domain owns the port. `phrases.TrackedTextSource` defines the two methods a
+source supplies, `tracked_paths` and `read`, and
+`phrase_source.RepositoryTextSource` is the only worktree adapter. A new
+adapter must enumerate paths without reading them, report a read as a domain
+record (`TrackedText` or `SkippedInput`), must not expose a filesystem enum
+through `PhraseScanResult`, and must raise `phrases.PhraseScanError` rather
+than a filesystem error. Keeping enumeration and reading apart is what lets the
+query apply its policy before any file is opened. Label mapping belongs only in
+`phrase_scan_reporting`, so a domain reason reaches a log or metric through its
+explicit mapping there.
 
 Typos execution is in scope per the amendment to
 [ADR 0001](adrs/0001-keep-the-builder-focused.md): running the pinned Typos

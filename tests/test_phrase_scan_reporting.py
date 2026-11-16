@@ -8,6 +8,7 @@ channel.
 
 from __future__ import annotations
 
+import io
 import logging
 import pathlib
 import typing as typ
@@ -100,6 +101,31 @@ def test_repeated_reasons_are_counted_together(
         "metric phrase_scan_files_skipped_total{reason=binary}=2",
         "metric phrase_scan_files_skipped_total{reason=symlink}=1",
     ], "count each fixed reason once"
+
+
+def test_a_supplied_writer_captures_metrics_without_standard_error(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A caller can collect the metric lines in a writer of its own."""
+    stream = io.StringIO()
+
+    phrase_scan_reporting.publish_scan_outcomes(
+        (phrases.SkipReason.OVERSIZED,), stream=stream
+    )
+    phrase_scan_reporting.publish_scan_failure(
+        phrases.PhraseScanError(
+            pathlib.Path("README.md"), phrases.ScanFailureReason.READ
+        ),
+        stream=stream,
+    )
+
+    assert stream.getvalue().splitlines() == [
+        "metric phrase_scan_files_skipped_total{reason=oversized}=1",
+        "metric phrase_scan_files_failed_total{reason=read-failure}=1",
+    ], "write both counters to the supplied writer"
+    assert not _metric_lines(capsys), (
+        "the supplied writer replaces the process's standard error"
+    )
 
 
 def test_a_clean_scan_publishes_nothing(

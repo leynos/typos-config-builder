@@ -55,9 +55,16 @@ Repositories that have not yet adopted the `gate` command should follow
   tracked file replaced by a directory each publish their own reason label. The
   process still exits with code 1 and prints one `error: ...` line.
 - A library caller of `phrases.find_phrases` now supplies a
-  `TrackedTextSource`. `phrase_source.RepositoryTextSource` wraps a Git
-  worktree, while a double can yield the same records in memory.
-  `PhraseScanResult.outcomes` carries the domain `SkipReason` values, and
+  `TrackedTextSource`. The port enumerates tracked paths and reads the ones the
+  query selects, so a policy document or an excluded path is never opened.
+  `phrase_source.RepositoryTextSource` wraps a Git worktree, while a double can
+  supply the same paths and text in memory.
+- `phrases.find_phrases` returns a `PhraseScanResult` rather than the tuple of
+  findings it returned in 0.1.3. Iterate `result.findings` rather than the
+  result itself, and test `not result.findings` rather than the result's
+  truthiness: a result carrying only skip outcomes is still truthy, so a bare
+  `if result:` no longer means "a phrase was found".
+- `PhraseScanResult.outcomes` carries the domain `SkipReason` values, and
   `phrase_scan_reporting` owns the log and metric labels for them. Importing
   the package still has no observability side effect.
 

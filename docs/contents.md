@@ -35,6 +35,9 @@ documentation set.
   records why rollout, harvesting, and tool orchestration remain out of scope.
 - [ADR 0002: Windows phrase-file handles](adrs/0002-open-windows-phrase-inputs-with-relative-handles.md)
   records the relative-handle opening boundary for Windows phrase inputs.
+- [ADR 0003: Select phrase inputs before reading](adrs/0003-select-phrase-inputs-before-reading.md)
+  records why the phrase policy is applied to a tracked path before its text is
+  read.
 
 ## Engineering practice
 

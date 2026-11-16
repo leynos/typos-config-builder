@@ -85,15 +85,31 @@ def _log_label(decision: str, error_class: str) -> None:
     )
 
 
-def _emit_metric(name: str, reason: str, count: int) -> None:
+def _metric_stream(stream: typ.TextIO | None) -> typ.TextIO:
+    """Return the writer a caller supplied, else the live standard error.
+
+    Reading ``sys.stderr`` at call time keeps a test's stream replacement in
+    force, while an explicit writer lets a caller capture metrics without
+    redirecting the process's standard error.
+    """
+    return sys.stderr if stream is None else stream
+
+
+def _emit_metric(
+    name: str, reason: str, count: int, stream: typ.TextIO | None = None
+) -> None:
     """Write one bounded metric line for a log-based collector."""
-    sys.stderr.write(f"metric {name}{{reason={reason}}}={count}\n")
+    _metric_stream(stream).write(f"metric {name}{{reason={reason}}}={count}\n")
 
 
-def _emit_counts(name: str, counts: cabc.Mapping[str, int]) -> None:
+def _emit_counts(
+    name: str,
+    counts: cabc.Mapping[str, int],
+    stream: typ.TextIO | None = None,
+) -> None:
     """Write one metric line per fixed reason that occurred."""
     for reason, count in sorted(counts.items()):
-        _emit_metric(name, reason, count)
+        _emit_metric(name, reason, count, stream)
 
 
 def metric_counts(outcomes: cabc.Iterable[phrases.SkipReason]) -> dict[str, int]:
@@ -122,13 +138,19 @@ def metric_counts(outcomes: cabc.Iterable[phrases.SkipReason]) -> dict[str, int]
     return counts
 
 
-def publish_scan_outcomes(outcomes: cabc.Iterable[phrases.SkipReason]) -> None:
+def publish_scan_outcomes(
+    outcomes: cabc.Iterable[phrases.SkipReason],
+    *,
+    stream: typ.TextIO | None = None,
+) -> None:
     """Publish fixed diagnostics and skip metrics for a completed scan.
 
     Parameters
     ----------
     outcomes
         Domain skip reasons returned by the phrase query.
+    stream
+        Writer for the metric lines. ``None`` writes to standard error.
 
     Examples
     --------
@@ -138,16 +160,22 @@ def publish_scan_outcomes(outcomes: cabc.Iterable[phrases.SkipReason]) -> None:
     for reason in collected:
         decision, error_class, _ = _SKIP_LABELS[reason]
         _log_label(decision, error_class)
-    _emit_counts(SKIPPED_METRIC, metric_counts(collected))
+    _emit_counts(SKIPPED_METRIC, metric_counts(collected), stream)
 
 
-def publish_scan_failure(error: phrases.PhraseScanError) -> None:
+def publish_scan_failure(
+    error: phrases.PhraseScanError,
+    *,
+    stream: typ.TextIO | None = None,
+) -> None:
     """Publish the fixed diagnostic and failure metric for an aborted scan.
 
     Parameters
     ----------
     error
         The fail-closed error raised by the phrase query.
+    stream
+        Writer for the metric line. ``None`` writes to standard error.
 
     Examples
     --------
@@ -159,11 +187,14 @@ def publish_scan_failure(error: phrases.PhraseScanError) -> None:
     """
     decision, error_class, metric_reason = _FAILURE_LABELS[error.reason]
     _log_label(decision, error_class)
-    _emit_metric(FAILED_METRIC, metric_reason, 1)
+    _emit_metric(FAILED_METRIC, metric_reason, 1, stream)
 
 
 def find_and_publish(
-    repository: pathlib.Path, policy: phrases.PhrasePolicy
+    repository: pathlib.Path,
+    policy: phrases.PhrasePolicy,
+    *,
+    stream: typ.TextIO | None = None,
 ) -> phrases.PhraseScanResult:
     """Run the phrase query over a worktree and publish whatever it returns.
 
@@ -178,6 +209,8 @@ def find_and_publish(
         Git worktree to scan.
     policy
         Merged phrase policy applied to tracked text.
+    stream
+        Writer for the metric lines. ``None`` writes to standard error.
 
     Returns
     -------
@@ -202,7 +235,7 @@ def find_and_publish(
             phrase_source.RepositoryTextSource(repository), policy
         )
     except phrases.PhraseScanError as error:
-        publish_scan_failure(error)
+        publish_scan_failure(error, stream=stream)
         raise
-    publish_scan_outcomes(result.outcomes)
+    publish_scan_outcomes(result.outcomes, stream=stream)
     return result

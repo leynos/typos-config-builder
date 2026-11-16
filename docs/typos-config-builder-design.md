@@ -62,19 +62,26 @@ The CLI exposes three commands over the same pipeline stages:
 checks every tracked file regardless of `--scope` because phrase corrections
 apply to any tracked text. It skips symlinks, non-regular entries such as FIFOs
 and devices, paths outside the worktree, binary content, and regular files
-larger than 1 MiB. A tracked file replaced by a directory raises
+larger than 1 MiB. The query selects on the path before it asks the source for
+text, so a policy document or an excluded path is never opened and cannot fail
+the scan; [ADR 0003](adrs/0003-select-phrase-inputs-before-reading.md) records
+that ordering. A selected tracked file replaced by a directory raises
 `phrases_files.TrackedFileError` with a directory-replacement outcome because
 it indicates worktree drift; the `phrase_source.RepositoryTextSource` adapter
-translates that, like every other filesystem failure, into the domain
-`PhraseScanError`, so the query only ever raises the domain error. The file
-layer returns fixed typed eligibility and read outcomes without logging. Its
-bounded reader opens relative to the repository root without following
-path-component links on POSIX. Windows opens components relative to held
-directory handles with `FILE_OPEN_REPARSE_POINT`, rejects reparse points before
-traversal, and verifies that the final descriptor remains inside the worktree.
-Native API bindings are isolated in `phrase_file_open_windows_native`. This
-reader is scoped to phrase scanning rather than a general-purpose file API. The
-Windows opening decision and rejected alternatives are recorded in
+translates that, like every other read failure, into the domain
+`PhraseScanError`. That guarantee covers reads only: enumeration still raises
+what `phrases_files.tracked_files` raises, `subprocess.CalledProcessError` when
+Git cannot list the tracked files and `FileNotFoundError` when `git` is not on
+the executable search path, so the query does not raise `PhraseScanError`
+alone. The file layer returns fixed typed eligibility and read outcomes without
+logging. Its bounded reader opens relative to the repository root without
+following path-component links on POSIX. Windows opens components relative to
+held directory handles with `FILE_OPEN_REPARSE_POINT`, rejects reparse points
+before traversal, and verifies that the final descriptor remains inside the
+worktree. Native API bindings are isolated in
+`phrase_file_open_windows_native`. This reader is scoped to phrase scanning
+rather than a general-purpose file API. The Windows opening decision and
+rejected alternatives are recorded in
 [ADR 0002](adrs/0002-open-windows-phrase-inputs-with-relative-handles.md).
 `is_scannable` adapts eligibility to a boolean for uncapped Typos selection;
 `phrase_scan` returns typed outcomes without repeating filesystem checks, and

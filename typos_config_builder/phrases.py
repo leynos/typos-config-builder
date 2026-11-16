@@ -7,10 +7,12 @@ the pure matcher in :mod:`typos_config_builder.phrase_matching` reports the
 prohibited phrases it finds.
 
 The domain never enumerates Git or reads a file. It asks an injected
-:class:`TrackedTextSource` for records, so a caller can supply a real worktree
-adapter or an in-memory double. It publishes no diagnostics or metrics either:
-:mod:`typos_config_builder.phrase_scan_reporting` owns those at the command
-boundary.
+:class:`TrackedTextSource` first for tracked paths and then for the text of the
+ones its policy selects, so a caller can supply a real worktree adapter or an
+in-memory double. Enumeration and reading stay separate operations so a policy
+exclusion is applied before any file is opened. The domain publishes no
+diagnostics or metrics either: :mod:`typos_config_builder.phrase_scan_reporting`
+owns those at the command boundary.
 """
 
 from __future__ import annotations
@@ -178,10 +180,19 @@ TrackedInput = TrackedText | SkippedInput
 
 
 class TrackedTextSource(typ.Protocol):
-    """Port yielding a repository's tracked inputs in deterministic order."""
+    """Port enumerating a repository's tracked paths and reading their text.
 
-    def tracked_inputs(self) -> cabc.Iterator[TrackedInput]:
-        """Yield one record per tracked path, in a stable order."""
+    The two operations are separate so the query can drop a policy document or
+    an excluded path before the source opens it. A policy exclusion therefore
+    cannot fail a scan through a path the scan never reads.
+    """
+
+    def tracked_paths(self) -> cabc.Iterator[pathlib.Path]:
+        """Yield every tracked path in a stable order."""
+        ...
+
+    def read(self, relative: pathlib.Path) -> TrackedInput:
+        """Report one tracked path as text, or why it contributed none."""
         ...
 
 
@@ -255,18 +266,21 @@ def load_policy(repository: pathlib.Path) -> PhrasePolicy:
 
 
 def find_phrases(source: TrackedTextSource, policy: PhrasePolicy) -> PhraseScanResult:
-    """Find prohibited phrases in the tracked inputs a source yields.
+    """Find prohibited phrases in the tracked inputs a source selects.
 
     The query applies the policy's ignore expressions and exclusions, skips
     policy documents so the rules are never matched against themselves, and
-    reports one finding per prohibited phrase. It reads no file and starts no
-    process: the injected source owns enumeration and decoding, and reports an
-    input it could not read as :class:`PhraseScanError`.
+    reports one finding per prohibited phrase. Selection happens on the path
+    alone, before the source is asked for any text, so an excluded or policy
+    document is never opened and cannot fail the scan. The query reads no file
+    and starts no process: the injected source owns enumeration and decoding,
+    and reports an input it could not read as :class:`PhraseScanError`.
 
     Parameters
     ----------
     source
-        Port yielding tracked text records or domain skip reasons.
+        Port enumerating tracked paths and reading the ones that survive
+        selection.
     policy
         Merged phrase corrections, ignore expressions, and exclusions.
 
@@ -274,12 +288,12 @@ def find_phrases(source: TrackedTextSource, policy: PhrasePolicy) -> PhraseScanR
     -------
     PhraseScanResult
         Findings in source order, then policy order, then position, together
-        with one skip reason per input that contributed no text.
+        with one skip reason per selected input that contributed no text.
 
     Raises
     ------
     PhraseScanError
-        Propagated unchanged when the source cannot read a tracked input.
+        Propagated unchanged when the source cannot read a selected input.
     ValueError
         If an ignore expression is invalid or prone to backtracking.
 
@@ -293,13 +307,18 @@ def find_phrases(source: TrackedTextSource, policy: PhrasePolicy) -> PhraseScanR
     exclusions = pathspec.GitIgnoreSpec.from_lines(policy.excluded_files)
     findings: list[PhraseFinding] = []
     outcomes: list[SkipReason] = []
-    for record in source.tracked_inputs():
-        if record.path.as_posix() in POLICY_PATHS or exclusions.match_file(
-            record.path.as_posix()
-        ):
+    for relative in source.tracked_paths():
+        if _is_unselected(relative, exclusions):
             continue
+        record = source.read(relative)
         if isinstance(record, SkippedInput):
             outcomes.append(record.reason)
         else:
             findings.extend(scanner.scan(record.path, record.text))
     return PhraseScanResult(tuple(findings), tuple(outcomes))
+
+
+def _is_unselected(relative: pathlib.Path, exclusions: pathspec.GitIgnoreSpec) -> bool:
+    """Report whether policy drops a tracked path before it is read."""
+    spelling = relative.as_posix()
+    return spelling in POLICY_PATHS or exclusions.match_file(spelling)
