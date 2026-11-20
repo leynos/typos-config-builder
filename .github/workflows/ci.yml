@@ -62,7 +62,7 @@ jobs:
       - name: Install mdtablefix
         # `make check-fmt` runs `mdtablefix --check --git`; 0.6.0 is the
         # first release with `--check` and `--git`.
-        uses: leynos/shared-actions/.github/actions/install-mdtablefix@1123a35f1cc7810f65bfffa5ea4c8b981d6c0090
+        uses: leynos/shared-actions/.github/actions/install-mdtablefix@3551a0bf76fe47d0cc5ff632c7796a8ddb23717e
         with:
           version: "0.6.1"
 
@@ -103,7 +103,7 @@ jobs:
       # publishes the report.
       - name: Test and Measure Coverage
         if: ${{ github.event_name == 'pull_request' }}
-        uses: leynos/shared-actions/.github/actions/generate-coverage@1123a35f1cc7810f65bfffa5ea4c8b981d6c0090
+        uses: leynos/shared-actions/.github/actions/generate-coverage@3551a0bf76fe47d0cc5ff632c7796a8ddb23717e
         with:
           output-path: coverage.xml
           format: cobertura
