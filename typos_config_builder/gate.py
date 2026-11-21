@@ -22,7 +22,7 @@ import subprocess  # ruff: ignore[suspicious-subprocess-import]
 import sys
 import typing as typ
 
-from typos_config_builder import builder, phrases, phrases_files
+from typos_config_builder import builder, phrase_scan_reporting, phrases, phrases_files
 
 if typ.TYPE_CHECKING:
     import collections.abc as cabc
@@ -358,7 +358,7 @@ def gate(
     ------
     FileNotFoundError
         If ``git`` is absent, or offline mode has no valid cache.
-    PhraseScanError
+    phrases.PhraseScanError
         If a tracked file cannot be read.
     TyposFailedError
         If a Typos invocation is killed by a signal.
@@ -378,7 +378,7 @@ def gate(
     build_result = builder.build(
         repository, selected.source, offline=selected.offline, check=False
     )
-    tracked = phrases.tracked_files(repository)
+    tracked = phrases_files.tracked_files(repository)
     # Typos follows a path given on its command line even when that path is a
     # symlink, so the worktree filter is applied before the paths are handed
     # over rather than only inside the phrase stage.
@@ -393,5 +393,7 @@ def gate(
     )
     # The phrase stage runs regardless of the Typos outcome, so one run
     # reports every class of finding.
-    findings = phrases.find_phrases(repository, phrases.load_policy(repository))
-    return GateResult(build_result, typos_exit, findings)
+    scan = phrase_scan_reporting.find_and_publish(
+        repository, phrases.load_policy(repository)
+    )
+    return GateResult(build_result, typos_exit, scan.findings)

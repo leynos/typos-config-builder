@@ -30,9 +30,32 @@ external-tool orchestration.
 
 The package keeps a small, acyclic dependency graph:
 
-- `cli` imports `builder`, `phrases`, and `gate`.
-- `gate` imports `builder` and `phrases`.
-- `phrases` imports `builder`, `policy`, `patterns`, and `phrases_files`.
+- `cli` imports `builder`, `phrases`, `gate`, and `phrase_scan_reporting`.
+- `gate` imports `builder`, `phrases`, `phrases_files`, and
+  `phrase_scan_reporting`.
+- `phrases` imports `builder`, `policy`, `phrase_matching`, and `pathspec`
+  only, and never the filesystem layer. `phrase_matching` is a leaf that imports
+  `patterns` at runtime: it masks ignored spans and reports prohibited phrases
+  over a string, performing no I/O. Both are queries: they return typed
+  outcomes and never publish a diagnostic or metric.
+- `phrase_source` imports `phrases`, `phrase_scan`, `phrase_scan_results`, and
+  `phrases_files`, and only the command boundary imports it. It is the one
+  adapter that knows both the domain vocabulary and the filesystem layer.
+  `phrase_scan` imports `phrases_files` and the leaf `phrase_scan_results`
+  module for fixed eligibility and read outcomes; it returns typed outcomes
+  without publishing.
+- `phrase_scan_reporting` imports `phrases` and `phrase_source`, and only the
+  command modules `cli` and `gate` import it. It owns the single composition
+  point that runs the query and publishes its outcomes, so a command cannot
+  report a completed scan without also reporting a failed one.
+- `phrases_files` imports the `phrase_file_open` dispatcher to open one
+  descriptor safely. The dispatcher loads `phrase_file_open_windows` only on
+  Windows; that adapter uses `phrase_file_open_windows_native` for native API
+  bindings and owns platform-specific no-follow traversal and containment
+  checks. Only `phrases_files.read_tracked_text` may call the dispatcher. These
+  open helpers do not read content or expose a general filesystem API. Keep
+  outcome mapping and bounded reading in `phrases_files` so callers cannot
+  bypass the phrase-scan result boundary.
 - `builder` imports `cache`, `policy`, and `render`.
 - `cache` imports `http` (as a function-local import, to keep the module
   loadable without pulling in the HTTPS stack at import time), and `http`
@@ -51,8 +74,7 @@ Exactly two modules start a process, and each owns a different tool:
 - `phrases_files.py` runs `git`, resolving the executable through
   `shutil.which` and closing standard input so a command double cannot wedge
   the gate on an inherited terminal. It lists tracked files and reads their
-  text, failing closed as described below; `phrases.py` imports it for both and
-  re-exports `tracked_files` so callers keep one import site.
+  text, failing closed as described below.
 - `gate.py` runs the pinned Typos binary. The console script must be
   installed beside `sys.executable`; there is no `PATH` fallback, so an
   unrelated Typos binary elsewhere on `PATH` can never stand in. Paths are
@@ -61,20 +83,25 @@ Exactly two modules start a process, and each owns a different tool:
   stage's result.
 
 Neither module imports the other's subprocess call; `gate.py` reaches tracked
-files through `phrases.tracked_files`, which delegates to `phrases_files.py`.
+files through `phrases_files.tracked_files` directly, and the domain reaches
+Git enumeration only through the `phrase_source` adapter.
 
 ### The four-hundred-line rule
 
 Keep each module under four hundred lines; split a module into a sibling before
-appending further behaviour once it approaches the limit. Headroom is thin in
-two modules: `gate.py` sits at 389 lines, and `remote.py`, which owns the HTTPS
-path, the bounded response read, the cache-identity checks, and the bounded
-refresh diagnostics, sits at 371 lines. Prefer a new sibling module over
-growing either one further. `GateOptions` groups the authority, cache policy,
-and scope because `gate` would otherwise exceed the repository's four-argument
-limit once the runner seam is included. The runner seam is a `typ.Protocol`
-naming only the subset of `subprocess.run` the gate uses, so a test records
-invocations without starting a process.
+appending further behaviour once it approaches the limit. `gate.py` stands at
+399 lines, so new behaviour there belongs in a sibling module rather than
+another helper. Headroom is thin in `phrase_file_open_windows_native.py` at 397
+lines, `phrases_files.py` at 386 lines, and `remote.py` at 381 lines.
+`phrases.py` is at 324 lines, its pure matcher `phrase_matching.py` at 227, the
+`phrase_source.py` adapter at 172, and `phrase_scan_reporting.py` at 241. The
+`remote.py` module owns the HTTPS path, the bounded response read, the
+cache-identity checks, and the bounded refresh diagnostics. Prefer a new
+sibling module over growing any of these further. `GateOptions` groups the
+authority, cache policy, and scope because `gate` would otherwise exceed the
+repository's four-argument limit once the runner seam is included. The runner
+seam is a `typ.Protocol` naming only the subset of `subprocess.run` the gate
+uses, so a test records invocations without starting a process.
 
 ### Type-scoped rendering
 
@@ -97,27 +124,71 @@ selection rule in `policy.py` and the emission in a small helper in
 ### Fail-closed and worktree-escape rules
 
 A tracked file whose bytes are not UTF-8 is binary as far as a phrase check is
-concerned, so `read_tracked_text` returns `None` after logging one bounded
-`phrase-scan` decision carrying neither the path nor any content, and the
-scanner moves on to the next file. Repositories legitimately track images,
-fonts, archives, and compiled artefacts, and failing on them would fail the
-gate in any such repository.
+concerned, so the filesystem layer returns an internal result with no text and
+a fixed read outcome. `scan_eligibility`, `read_tracked_text`, and
+`phrase_scan.read_scannable_text` classify and read without logging, and
+`phrase_source.RepositoryTextSource` maps each filesystem outcome to a domain
+`SkipReason` or `ScanFailureReason`, raising `phrases.PhraseScanError` for a
+fail-closed read. `phrases.find_phrases` is then a pure query over the injected
+`TrackedTextSource` port: it neither reads a file nor logs. The port enumerates
+paths and reads text as two operations, so the query drops a policy document or
+an excluded path before asking for its text and such a path can never fail the
+scan. `phrase_scan_reporting.find_and_publish` remains the single publication
+point, used by `cli.check_phrases` and `gate`. Publication is one debug record
+per outcome, carrying the fixed decision and error class but never a tracked
+path or its content, plus `phrase_scan_files_skipped_total` and
+`phrase_scan_files_failed_total` counter lines labelled by fixed reason on
+standard error. Every publishing function accepts an optional `stream` writer,
+so a caller or a test can capture the counter lines without replacing the
+process's standard error. A library caller can therefore run the scan without
+inheriting an observability side effect. Repositories legitimately track
+images, fonts, archives, and compiled artefacts, and failing on them would fail
+the gate in any such repository.
 
-The phrase scan still fails closed on a read error: an unreadable tracked file
-raises `PhraseScanError` with the `OSError` chained, rather than being skipped,
-because that signals the worktree changed under the scan and a silent skip
-hides exactly the file most likely to have drifted. Masking marks every ignored
-span against the original text and blanks the marked characters in one pass,
-which keeps offsets exact and keeps overlapping spans ignored; a sequential
-substitution per pattern does not.
+Regular tracked files larger than 1 MiB are also skipped by the phrase scan.
+`scan_eligibility` applies the limit when
+`phrase_scan._scan_eligibility_for_path` supplies it; `is_scannable` is
+uncapped by default for Typos selection. `read_tracked_text` validates the
+opened descriptor before reading and caps the read at one byte beyond the
+limit. POSIX opens each path component relative to the worktree descriptor
+without following links, then re-walks the path and compares device and inode
+numbers, so a directory renamed out of the worktree during the open fails
+closed with `ESTALE` rather than being read. Concurrent in-place modification
+of an already-contained file is outside that guarantee, because the descriptor
+keeps naming the bytes it was opened on. Windows opens each component relative
+to a held directory handle with `FILE_OPEN_REPARSE_POINT`, rejects reparse
+points before traversal, and checks the final descriptor remains inside the
+worktree before reading. This limit intentionally defines which tracked text
+the phrase check examines.
+
+The phrase scan still fails closed on a read error: the adapter maps an
+unreadable tracked file to `PhraseScanError` with the underlying `OSError`
+chained, rather than skipping it, because that signals the worktree changed
+under the scan and a silent skip hides exactly the file most likely to have
+drifted. Masking marks every ignored span against the original text and blanks
+the marked characters in one pass, which keeps offsets exact and keeps
+overlapping spans ignored; a sequential substitution per pattern does not.
 
 Tracked files are enumerated with their index modes, and submodule gitlinks
 (mode 160000) are dropped at that point so neither the phrase scan nor the
 Typos run ever sees them. A remaining tracked path is skipped, not read, when
-it is a symlink or when resolving it lands outside the worktree through a
-symlinked parent, so neither stage can follow a link out of the repository it
-was asked to check. A tracked file that has been replaced by a directory is an
-error, not a skip, because that is a worktree anomaly rather than policy.
+it is a symlink, a non-regular entry such as a FIFO or device, or when
+resolving it lands outside the worktree through a symlinked parent. The phrase
+reader validates the opened descriptor against regular-file and containment
+requirements before reading from it. For the phrase scan, a tracked file
+replaced by a directory raises `PhraseScanError`; it is a worktree anomaly
+rather than policy. Typos selection skips such a path.
+
+The domain owns the port. `phrases.TrackedTextSource` defines the two methods a
+source supplies, `tracked_paths` and `read`, and
+`phrase_source.RepositoryTextSource` is the only worktree adapter. A new
+adapter must enumerate paths without reading them, report a read as a domain
+record (`TrackedText` or `SkippedInput`), must not expose a filesystem enum
+through `PhraseScanResult`, and must raise `phrases.PhraseScanError` rather
+than a filesystem error. Keeping enumeration and reading apart is what lets the
+query apply its policy before any file is opened. Label mapping belongs only in
+`phrase_scan_reporting`, so a domain reason reaches a log or metric through its
+explicit mapping there.
 
 Typos execution is in scope per the amendment to
 [ADR 0001](adrs/adr-0001-keep-the-builder-focused.md): running the pinned Typos
@@ -142,7 +213,13 @@ workflow step, or local composite action step, from running the suite again. It
 reads commands through `tests/suite_commands.py`, which splits a command at
 shell separators, reads each segment's program before its arguments, and looks
 through `uv run`, `uvx` and `python -m` wrappers; use it for any other contract
-that asks whether a command runs the suite.
+that asks whether a command runs the suite. One exemption is deliberate: the
+focused Windows opener probe, `WINDOWS_INTEGRATION_COMMAND` in that module,
+names `pytest -q tests/test_phrase_file_open_windows_integration.py` and is
+recognized only when a segment's unwrapped words equal it exactly. It runs
+platform-specific integration cases and does not re-run the coverage-owned
+suite, so another path or an extra argument does not inherit the exemption.
+Extending the probe means updating that constant in the same change.
 
 Pull-request continuous integration (CI) generates coverage with the ratchet
 (`with-ratchet: 'true'`) against the baseline that `coverage-main.yml` writes
@@ -192,6 +269,23 @@ the interpreter (`ratchet-baseline-<os>-py<major.minor>-`), so a lane on
 another Python would miss its baseline rather than compare against the wrong
 one; the contract turns that silent restart into a failure. It uses
 `packaging`, a development dependency.
+
+### Windows phrase-input probe
+
+`ci.yml`'s `windows-phrase-inputs` job is the only hosted proof of the native
+Windows opener, because the Linux suite exercises that adapter through native
+API doubles. It runs on `windows-latest` with a ten-minute timeout and read-only
+`contents` permission, checks out without persisting credentials, and sets up
+Python 3.14 and uv. It then runs `uv sync --locked --group dev` and
+`uv run --locked pytest -q tests/test_phrase_file_open_windows_integration.py`
+against regular files, a nested file, a symbolic link, and a directory
+junction. A failure of that job blocks the change.
+
+The probe is deliberately narrow: it covers a platform case rather than running
+the coverage-owned suite again, so it is outside
+`tests/test_suite_runs_once.py` only through the exact-command exemption
+described under coverage publication. Widening the command changes what that
+contract exempts.
 
 ### Workflow contracts
 

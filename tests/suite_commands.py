@@ -41,6 +41,12 @@ UV_VALUE_OPTIONS = frozenset({
 SEPARATORS = re.compile(r"[;|&\n]")
 #: Programs that are pytest itself.
 PYTEST_PROGRAMS = frozenset({"pytest", "py.test"})
+#: The focused Windows probe is not the coverage-owned full suite.
+WINDOWS_INTEGRATION_COMMAND = (
+    "pytest",
+    "-q",
+    "tests/test_phrase_file_open_windows_integration.py",
+)
 
 
 def _words(segment: str) -> list[str]:
@@ -95,7 +101,7 @@ def _segment_runs_suite(segment: str) -> bool:
         return False
     program = words[0].rsplit("/", 1)[-1]
     if program in PYTEST_PROGRAMS:
-        return True
+        return tuple(words) != WINDOWS_INTEGRATION_COMMAND
     if program != "make":
         return False
     targets = _operands(words[1:], MAKE_VALUE_OPTIONS)
@@ -113,8 +119,9 @@ def runs_suite(command: str) -> bool:
     Returns
     -------
     bool
-        True when any segment runs pytest, or runs ``make`` with no target,
-        ``test`` or ``all``.
+        True when any segment runs the full pytest suite, or runs ``make`` with
+        no target, ``test`` or ``all``. The focused Windows opener probe is
+        excluded because it is a platform-specific integration check.
 
     Examples
     --------

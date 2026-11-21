@@ -273,6 +273,24 @@ all, because that means the worktree changed under the scan and a skipped file
 is exactly the one most likely to have drifted. Tracked symlinks are skipped so
 the scan cannot follow a link out of the repository.
 
+The phrase check considers regular tracked files up to 1 MiB. It skips larger
+files, binary content, paths that resolve outside the repository, and other
+non-regular entries such as FIFOs and devices. This per-file size limit bounds
+the time and memory spent checking each input. A tracked file replaced by a
+directory fails the phrase scan closed with exit code 1.
+
+Available from 0.1.4, each input is opened beneath the repository root without
+following a link, and the opened file is then re-verified against a fresh walk,
+so a directory moved out of the worktree during the scan fails the check rather
+than being read. Every skip is reported as one debug record and as a
+`metric phrase_scan_files_skipped_total{reason=...}=N` line on standard error;
+a fail-closed scan writes `metric phrase_scan_files_failed_total{reason=...}=1`
+before it exits. Neither channel carries a tracked path or file content, so a
+log consumer never learns which file was skipped from the metric alone.
+
+See [the migration guide for 0.1.4](migration-guide-0-1-4.md) for the steps a
+consumer should take, and for the inputs that are now skipped.
+
 Exit codes are:
 
 | Exit code | Meaning                                                           |
