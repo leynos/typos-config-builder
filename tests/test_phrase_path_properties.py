@@ -225,7 +225,10 @@ class _FakeWindowsApi:
     ) -> int:
         """Record one component open, raising any modelled open failure first."""
         index = len(self.opened)
+        is_final = index == len(self.parts) - 1
         assert component == self.parts[index], "open components in order"
+        assert parent == index + 1, "open relative to the previous handle"
+        assert for_read is is_final, "read access only for the final component"
         if self.open_error_index == index:
             assert self.open_error is not None
             raise self.open_error
