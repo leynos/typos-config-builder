@@ -16,6 +16,9 @@ documentation set.
 - [Migration guide for 0.1.2](migration-guide-0-1-2.md) explains how a
   consumer adopts `[patterns] markdown_only` to confine an ignore expression to
   Markdown.
+- [Migration guide for 0.1.4](migration-guide-0-1-4.md) explains how a
+  consumer adopts the containment and size bounds the phrase check now applies,
+  and the fixed skip and failure metrics it publishes.
 - [AGENTS.md spelling block](agents-md-spelling.md) holds the canonical text
   every consumer copies into its `AGENTS.md` to document the gate.
 - [Repository layout](repository-layout.md) maps the package, tests,
@@ -30,6 +33,11 @@ documentation set.
   deterministic generation pipeline and its deliberate boundaries.
 - [ADR 0001: Keep the builder focused](adrs/adr-0001-keep-the-builder-focused.md)
   records why rollout, harvesting, and tool orchestration remain out of scope.
+- [ADR 0002: Windows phrase-file handles](adrs/0002-open-windows-phrase-inputs-with-relative-handles.md)
+  records the relative-handle opening boundary for Windows phrase inputs.
+- [ADR 0003: Select phrase inputs before reading](adrs/0003-select-phrase-inputs-before-reading.md)
+  records why the phrase policy is applied to a tracked path before its text is
+  read.
 
 ## Engineering practice
 

@@ -14,7 +14,7 @@ import cyclopts
 from cyclopts import App, Parameter
 
 from typos_config_builder import gate as gating
-from typos_config_builder import phrases
+from typos_config_builder import phrase_scan_reporting, phrases
 from typos_config_builder.builder import ConfigDriftError, build
 
 if typ.TYPE_CHECKING:
@@ -139,11 +139,13 @@ def check_phrases(repository: pathlib.Path | None = None) -> None:
     """
     repository = pathlib.Path.cwd() if repository is None else repository
     try:
-        findings = phrases.find_phrases(repository, phrases.load_policy(repository))
+        result = phrase_scan_reporting.find_and_publish(
+            repository, phrases.load_policy(repository)
+        )
     except EXPECTED_FAILURES as error:
         _exit_with_error(error)
-    _print_findings(findings)
-    if findings:
+    _print_findings(result.findings)
+    if result.findings:
         raise SystemExit(gating.FINDINGS_EXIT)
 
 
