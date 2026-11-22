@@ -29,6 +29,19 @@ PUBLISHER: typ.Final = "release"
 _DOWNLOAD = re.compile(r"^actions/download-artifact@")
 _FIND = re.compile(r"\bfind\s+(?P<root>\S+)\s[^|]*-name\s+['\"]?\*\.whl['\"]?")
 _GUARD = re.compile(r"\bexit\s+1\b")
+_EMPTINESS = re.compile(r"(?:-eq\s+0|==\s*0|-z\b|!\s*-s\b)")
+
+
+def _executable(script: str) -> str:
+    """Return the script's command lines, dropping whole-line comments.
+
+    A commented-out command is not a command. Reading the raw text would let
+    `# gh release upload ...` or a trailing `# exit 1` satisfy the contract
+    while the workflow publishes nothing.
+    """
+    return "\n".join(
+        line for line in script.splitlines() if not line.lstrip().startswith("#")
+    )
 
 
 def _publisher_steps(document: Document) -> list[dict[object, object]]:
@@ -49,16 +62,12 @@ def _download_step(document: Document) -> dict[object, object] | None:
 
 
 def _upload_script(document: Document) -> str | None:
-    """Return the shell that publishes wheels, if there is any."""
-    return next(
-        (
-            str(script)
-            for step in _publisher_steps(document)
-            if isinstance(script := step.get("run"), str)
-            and "gh release upload" in script
-        ),
-        None,
-    )
+    """Return the executable shell that publishes wheels, if there is any."""
+    for step in _publisher_steps(document):
+        raw = step.get("run")
+        if isinstance(raw, str) and "gh release upload" in (script := _executable(raw)):
+            return script
+    return None
 
 
 def _builder_artifact_name(document: Document) -> str | None:
@@ -102,9 +111,24 @@ def _handout_defects(document: Document) -> list[str]:
             f"the upload searches {found.group('root')!r}, "
             f"not the download path {path!r}"
         )
-    if not _GUARD.search(script):
+    if not (_GUARD.search(script) and _EMPTINESS.search(script)):
         defects.append("an upload that finds no wheel still succeeds")
     return defects
+
+
+def _guarded_script(search: str) -> str:
+    """Return the handout shape this repository must use."""
+    return (
+        "set -eu\n"
+        f"mapfile -d '' wheels < <({search})\n"
+        "if (( ${#wheels[@]} == 0 )); then exit 1; fi\n"
+        'gh release upload v0.0.0 "${wheels[@]}" --clobber'
+    )
+
+
+def _unguarded_script(search: str) -> str:
+    """Return the shape that reports success without publishing a wheel."""
+    return f"set -eu\n{search} | xargs -0 gh release upload v0.0.0"
 
 
 def _workflow(
@@ -112,21 +136,16 @@ def _workflow(
     download_name: str | None = "wheels-pure",
     find_root: str = "dist",
     guard: bool = True,
+    run_script: str | None = None,
 ) -> Document:
     """Build a release workflow with one part of the handout varied."""
     declared: dict[object, object] = {"path": "dist"}
     if download_name is not None:
         declared["name"] = download_name
     search = f"find {find_root} -type f -name '*.whl' -print0"
-    if guard:
-        script = (
-            "set -eu\n"
-            f"mapfile -d '' wheels < <({search})\n"
-            "if (( ${#wheels[@]} == 0 )); then exit 1; fi\n"
-            'gh release upload v0.0.0 "${wheels[@]}" --clobber'
-        )
-    else:
-        script = f"set -eu\n{search} | xargs -0 gh release upload v0.0.0"
+    script = _guarded_script(search) if guard else _unguarded_script(search)
+    if run_script is not None:
+        script = run_script
     builder = {
         "steps": [
             {
@@ -163,8 +182,30 @@ def test_the_release_workflow_hands_over_the_wheel_it_builds() -> None:
         ),
         (_workflow(find_root="dist/wheels-pure"), "not the download path"),
         (_workflow(guard=False), "still succeeds"),
+        (
+            _workflow(run_script="set -eu\n# gh release upload v0.0.0 dist/*.whl\n"),
+            "never uploads a wheel",
+        ),
+        (
+            _workflow(
+                run_script=(
+                    "set -eu\n"
+                    "find dist -type f -name '*.whl' -print0 | "
+                    "xargs -0 gh release upload v0.0.0\n"
+                    "# exit 1"
+                )
+            ),
+            "still succeeds",
+        ),
     ],
-    ids=["unnamed-download", "name-mismatch", "wrong-root", "no-guard"],
+    ids=[
+        "unnamed-download",
+        "name-mismatch",
+        "wrong-root",
+        "no-guard",
+        "commented-upload",
+        "commented-guard",
+    ],
 )
 def test_each_way_of_losing_the_wheel_is_reported(
     workflow: Document, defect: str
