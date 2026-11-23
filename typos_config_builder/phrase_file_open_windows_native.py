@@ -1,7 +1,7 @@
 """Bind Windows APIs used by the phrase-file handle walker.
 
 The rationale and alternatives are recorded in
-``docs/adrs/0002-open-windows-phrase-inputs-with-relative-handles.md``.
+``docs/adrs/adr-0002-open-windows-phrase-inputs-with-relative-handles.md``.
 """
 
 from __future__ import annotations
