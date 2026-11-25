@@ -47,11 +47,21 @@ jobs:
           generate_release_notes: true
       - uses: actions/download-artifact@v8
         with:
+          name: wheels-pure
           path: dist
       - name: Upload wheels to release
+        # Name the artifact so a missing one fails the download, search all of
+        # dist rather than assuming where the download put it, and fail when
+        # nothing was found. The previous dist/wheels-* glob matched nothing,
+        # so v0.1.0 to v0.1.4 were published without a wheel while this step
+        # still reported success.
         run: |
           set -eu
-          find dist/wheels-* -type f -name "*.whl" -print0 | \
-            xargs -0 -r gh release upload "${{ github.ref_name }}" --clobber
+          mapfile -d '' wheels < <(find dist -type f -name '*.whl' -print0)
+          if (( ${#wheels[@]} == 0 )); then
+            echo "no wheel found under dist" >&2
+            exit 1
+          fi
+          gh release upload "${{ github.ref_name }}" "${wheels[@]}" --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
